@@ -313,7 +313,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
           mock_time_info.outputBufferDacTime = 0.0;
       }
 
-      std::vector<int16_t> create_test_samples(size_t count, int16_t value = 16383) {
+      std::vector<int16_t> create_test_samples(int count, int16_t value = 16383) {
           return std::vector<int16_t>(count, value);
       }
 
@@ -329,7 +329,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
       }
 
       viam::sdk::audio_info test_info;
-      size_t samples_per_chunk;
+      int samples_per_chunk;
       std::unique_ptr<microphone::AudioStreamContext> ctx;
       PaStreamCallbackTimeInfo mock_time_info;
   };
@@ -359,13 +359,8 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
 
   TEST_F(AudioCallbackTest, TracksFirstCallbackTime) {
       std::vector<int16_t> samples = create_test_samples(100);
-
-      // Before callback, first_callback_captured should be false
       EXPECT_FALSE(ctx->first_callback_captured.load());
-
       call_callback(samples);
-
-      // After callback, timing should be captured
       EXPECT_TRUE(ctx->first_callback_captured.load());
       EXPECT_EQ(ctx->first_sample_adc_time, mock_time_info.inputBufferAdcTime);
   }
@@ -374,14 +369,9 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
       std::vector<int16_t> samples = create_test_samples(100);
 
       EXPECT_EQ(ctx->total_samples_written.load(), 0);
-
       call_callback(samples);
-
       EXPECT_EQ(ctx->total_samples_written.load(), 100);
-
-      // Call again
       call_callback(samples);
-
       EXPECT_EQ(ctx->total_samples_written.load(), 200);
   }
 

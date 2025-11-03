@@ -384,6 +384,9 @@ void Microphone::get_audio(std::string const& codec,
         const uint64_t write_pos = stream_context->get_write_position();
         const uint64_t available_samples = write_pos - read_position;
 
+
+        VIAM_SDK_LOG(info) << "avaliable samples: " << available_samples;
+
         // Wait until we have a full chunk worth of samples
         if (available_samples < device_samples_per_chunk) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
