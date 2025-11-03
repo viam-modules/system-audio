@@ -684,9 +684,6 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
 
     PaStream* dummy_stream = reinterpret_cast<PaStream*>(0x1234);
 
-    // Each chunk is 100ms = 4410 samples at 44.1kHz mono
-    const int samples_per_chunk = 4410;
-    const int num_chunks = 5;
 
      mic.audio_context_ = createTestContext(mic, 0);
 
