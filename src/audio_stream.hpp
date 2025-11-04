@@ -46,11 +46,12 @@ struct AudioStreamContext {
 
     uint64_t get_write_position() const;
 
+    std::chrono::nanoseconds calculate_sample_timestamp(
+    uint64_t sample_number);
+
+    uint64_t get_sample_number_from_timestamp(int64_t timestamp);
 };
 
-std::chrono::nanoseconds calculate_sample_timestamp(
-    const AudioStreamContext* ctx,
-    uint64_t sample_number);
 
 /**
  * PortAudio callback function - runs on real-time audio thread.

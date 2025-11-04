@@ -74,6 +74,46 @@ uint64_t AudioStreamContext::get_write_position() const {
     return total_samples_written.load(std::memory_order_acquire);
 }
 
+uint64_t AudioStreamContext::get_sample_number_from_timestamp(int64_t timestamp) {
+    if (timestamp <= 0) {
+        return 0;
+    }
+
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+
+    // Check if timestamp is before stream started
+    if (timestamp < stream_start_timestamp_ns) {
+        return 0;
+    }
+
+    int64_t elapsed_time_ns = timestamp - stream_start_timestamp_ns;
+    double elapsed_time_seconds = static_cast<double>(elapsed_time_ns) / 1e9;
+    uint64_t sample_number = static_cast<uint64_t>(
+        elapsed_time_seconds * static_cast<double>(info.sample_rate_hz) * info.num_channels
+    );
+    return sample_number;
+}
+
+std::chrono::nanoseconds AudioStreamContext::calculate_sample_timestamp(
+    uint64_t sample_number)
+{
+    // Convert sample number to elapsed time
+    double seconds_per_frame = 1.0 / static_cast<double>(info.sample_rate_hz);
+    double elapsed_seconds = (sample_number / info.num_channels) * seconds_per_frame;
+
+    auto elapsed_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(elapsed_seconds)
+    );
+
+    auto absolute_time = stream_start_time + elapsed_duration;
+
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        absolute_time.time_since_epoch()
+    );
+}
+
+
 /**
  * PortAudio callback function - runs on real-time audio thread.
  *  This function must not:
@@ -116,23 +156,5 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
     return paContinue;
 }
 
-std::chrono::nanoseconds calculate_sample_timestamp(
-    const AudioStreamContext* ctx,
-    uint64_t sample_number)
-{
-    // Convert sample number to elapsed time
-    double seconds_per_sample = 1.0 / static_cast<double>(ctx->info.sample_rate_hz);
-    double elapsed_seconds = (sample_number / ctx->info.num_channels) * seconds_per_sample;
-
-    auto elapsed_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::duration<double>(elapsed_seconds)
-    );
-
-    auto absolute_time = ctx->stream_start_time + elapsed_duration;
-
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        absolute_time.time_since_epoch()
-    );
-}
 
 } // namespace microphone

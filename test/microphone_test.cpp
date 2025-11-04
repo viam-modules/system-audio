@@ -856,6 +856,110 @@ TEST_F(PortAudioTest, TestOpenStreamOpenStreamFails) {
     EXPECT_THROW(microphone::openStream(&stream, config, mock_pa_.get()), std::runtime_error);
 }
 
+TEST_F(MicrophoneTest, GetAudioThrowsOnTimestampBeforeStreamStarted) {
+    auto config = createConfig(testDeviceName, 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic, 48000);  // Write 1 second of audio
+
+    // Get stream start time
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+
+    // Use timestamp from before stream started
+    int64_t old_timestamp = stream_start_timestamp_ns - 2000000000;
+
+    bool called = false;
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) -> bool {
+        called = true;
+        return false;
+    };
+
+    EXPECT_THROW({
+        mic.get_audio("pcm16", handler, 0.0, old_timestamp, ProtoStruct{});
+    }, std::invalid_argument);
+
+    EXPECT_FALSE(called);
+}
+
+TEST_F(MicrophoneTest, GetAudioThrowsOnTimestampInFuture) {
+    auto config = createConfig(testDeviceName, 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic, 48000);  // Write 1 second of audio
+
+    auto future_time = std::chrono::system_clock::now() + std::chrono::seconds(10);
+    auto future_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(future_time);
+    int64_t future_timestamp_ns = future_ns.time_since_epoch().count();
+
+    bool called = false;
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) -> bool {
+        called = true;
+        return false;
+    };
+
+    EXPECT_THROW({
+        mic.get_audio("pcm16", handler, 0.0, future_timestamp_ns, ProtoStruct{});
+    }, std::invalid_argument);
+
+    EXPECT_FALSE(called);
+}
+
+TEST_F(MicrophoneTest, GetAudioThrowsOnTimestampTooOld) {
+    auto config = createConfig(testDeviceName, 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    // Buffer holds 10 seconds by default (BUFFER_DURATION_SECONDS)
+    // Write 15 seconds worth of samples so first 5 seconds are overwritten
+    int samples_for_15_seconds = 48000 * 2 * 15;  // 48kHz stereo * 15 seconds
+    auto ctx = createTestContext(mic, samples_for_15_seconds);
+
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+
+    bool called = false;
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) -> bool {
+        called = true;
+        return false;
+    };
+
+    EXPECT_THROW({
+        mic.get_audio("pcm16", handler, 0.0, stream_start_timestamp_ns, ProtoStruct{});
+    }, std::invalid_argument);
+
+    EXPECT_FALSE(called);
+}
+
+TEST_F(MicrophoneTest, GetAudioSucceedsWithValidTimestamp) {
+    auto config = createConfig(testDeviceName, 48000, 1);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    // Write 2 seconds worth of samples
+    int samples_for_2_seconds = 48000 * 2;  // 48kHz mono * 2 seconds
+    auto ctx = createTestContext(mic, samples_for_2_seconds);
+
+    // Get timestamp for 1 second into the stream (should be valid)
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+    int64_t one_second_later = stream_start_timestamp_ns + 1000000000;
+
+    bool called = false;
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) -> bool {
+        called = true;
+        return false;  // Stop after first chunk
+    };
+
+    EXPECT_NO_THROW({
+        mic.get_audio("pcm16", handler, 0.0, one_second_later, ProtoStruct{});
+    });
+
+    EXPECT_TRUE(called);
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   ::testing::AddGlobalTestEnvironment(new MicrophoneTestEnvironment);
