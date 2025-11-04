@@ -297,14 +297,13 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
               .num_channels = 1
           };
 
-          // Small chunk size for testing (100 frames at 44.1kHz = ~2.3ms)
           samples_per_chunk = 100;
 
           // Create ring buffer context (10 second buffer)
           ctx = std::make_unique<microphone::AudioStreamContext>(
               test_info,
               samples_per_chunk,
-              10  // 10 seconds buffer
+              10
           );
 
           // Create mock time info
@@ -321,7 +320,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
           return microphone::AudioCallback(
               samples.data(),      // inputBuffer
               nullptr,             // outputBuffer
-              samples.size() / ctx->info.num_channels,  // framesPerBuffer (not total samples)
+              samples.size() / ctx->info.num_channels,  // framesPerBuffer
               &mock_time_info,     // timeInfo
               0,                   // statusFlags
               ctx.get()            // userData
@@ -336,19 +335,14 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
 
 
   TEST_F(AudioCallbackTest, WritesSamplesToCircularBuffer) {
-      // Create test samples
       std::vector<int16_t> samples = {100, 200, 300, 400, 500};
 
-      // Call the callback
       int result = call_callback(samples);
 
-      // Verify callback returned paContinue
       EXPECT_EQ(result, paContinue);
 
-      // Verify samples were written to circular buffer
       EXPECT_EQ(ctx->get_write_position(), samples.size());
 
-      // Read samples back and verify they match
       std::vector<int16_t> read_buffer(samples.size());
       uint64_t read_pos = 0;
       int samples_read = ctx->read_samples(read_buffer.data(), samples.size(), read_pos);
