@@ -6,7 +6,8 @@ namespace microphone {
 Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg,
                        audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), active_streams_(0) {
-        setupStreamFromConfig(cfg);
+        auto params = parseConfigAttributes(cfg);
+        setupStreamFromConfig(params);
     }
 
 // Microphone destructor
@@ -18,6 +19,33 @@ Microphone::~Microphone() {
 }
 
 vsdk::Model Microphone::model("viam", "audio", "microphone");
+
+ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) {
+    auto attrs = cfg.attributes();
+    ConfigParams params;
+
+    // Parse device name
+    if (attrs.count("device_name")) {
+        params.device_name = *attrs.at("device_name").get<std::string>();
+    }
+
+    // Parse sample rate (optional)
+    if (attrs.count("sample_rate")) {
+        params.sample_rate = static_cast<int>(*attrs.at("sample_rate").get<double>());
+    }
+
+    // Parse num_channels (optional)
+    if (attrs.count("num_channels")) {
+        params.num_channels = static_cast<int>(*attrs.at("num_channels").get<double>());
+    }
+
+    // Parse latency in milliseconds (optional)
+    if (attrs.count("latency")) {
+        params.latency_ms = *attrs.at("latency").get<double>();
+    }
+
+    return params;
+}
 
 std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
     auto attrs = cfg.attributes();
@@ -61,70 +89,7 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
     VIAM_SDK_LOG(info) << "[reconfigure] Microphone reconfigure start";
 
 
-    std::string prev_device_name;
-    int prev_sample_rate;
-    int prev_num_channels;
-    double prev_latency;
-    {
-        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        prev_device_name = device_name_;
-        prev_sample_rate = sample_rate_;
-        prev_num_channels = num_channels_;
-        prev_latency = latency_;
-    }
-
-
-    // Parse new configuration
-    auto attrs = cfg.attributes();
-    std::string new_device_name = device_name_;
-    if (attrs.count("device_name")) {
-        new_device_name = *attrs.at("device_name").get<std::string>();
-    }
-
-    // Get device info to determine default sample rate if needed
-    int new_sample_rate = sample_rate_;
-    if (attrs.count("sample_rate")) {
-        new_sample_rate = static_cast<int>(*attrs.at("sample_rate").get<double>());
-    } else {
-        // Use device's default sample rate
-        audio::portaudio::RealPortAudio real_pa;
-        audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
-
-        PaDeviceIndex device_index;
-        if (new_device_name.empty()) {
-            device_index = audio_interface.getDefaultInputDevice();
-        } else {
-            device_index = findDeviceByName(new_device_name, &audio_interface);
-        }
-
-        if (device_index != paNoDevice) {
-            const PaDeviceInfo* deviceInfo = audio_interface.getDeviceInfo(device_index);
-            if (deviceInfo) {
-                new_sample_rate = static_cast<int>(deviceInfo->defaultSampleRate);
-            }
-        }
-    }
-
-    int new_num_channels = num_channels_;
-    if (attrs.count("num_channels")) {
-        new_num_channels = static_cast<int>(*attrs.at("num_channels").get<double>());
-    } else {
-        new_num_channels = 1; // default to mono
-    }
-
-    double new_latency = latency_;
-    if (attrs.count("latency")) {
-        new_latency = (*attrs.at("latency").get<double>()) / 1000.0;  // Convert ms to seconds
-    } else {
-        new_latency = 0.0;  // default to device default
-    }
-
-    // Check if any configuration has changed
-    bool config_changed = (prev_device_name != new_device_name) ||
-                          (prev_sample_rate != new_sample_rate) ||
-                          (prev_num_channels != new_num_channels) ||
-                          (prev_latency != new_latency);
-
+    //
     // Warn if reconfiguring with active streams
     // Changing the sample rate or number of channels mid stream
     // might cause issues client side, clients need to be actively
@@ -132,22 +97,15 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
     // may also cause a small gap in audio.
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        if (active_streams_ > 0 && config_changed) {
+        if (active_streams_ > 0) {
             VIAM_SDK_LOG(warn) << "[reconfigure] Reconfiguring with " << active_streams_
                                << " active stream(s). This may cause audio gaps or break "
                                << "encoded audio. Clients should monitor audio_info in chunks.";
         }
     }
 
-    if (config_changed) {
-        VIAM_SDK_LOG(info) << "[reconfigure] stream configuration changed, restarting stream";
-        setupStreamFromConfig(cfg);
-        VIAM_SDK_LOG(info) << "[reconfigure] Stream restarted successfully";
-    } else {
-        VIAM_SDK_LOG(info) << "[reconfigure] stream configuration unchanged, no restart needed";
-    }
-
-    VIAM_SDK_LOG(info) << "[reconfigure] Microphone reconfigure end";
+    auto params = parseConfigAttributes(cfg);
+    setupStreamFromConfig(params);
 
 }
 
@@ -322,18 +280,16 @@ std::vector<viam::sdk::GeometryConfig> Microphone::get_geometries(const viam::sd
 }
 
 
-void Microphone::setupStreamFromConfig(const viam::sdk::ResourceConfig& cfg) {
-    auto attrs = cfg.attributes();
+void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     audio::portaudio::RealPortAudio real_pa;
     audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
 
-    std::string new_device_name = device_name_;
-    if (attrs.count("device_name")) {
-        new_device_name = *attrs.at("device_name").get<std::string>();
-    }
-
+    // Determine device and get device info
+    std::string new_device_name = params.device_name.empty() ? device_name_ : params.device_name;
     PaDeviceIndex device_index;
     const PaDeviceInfo* deviceInfo;
+
+    VIAM_SDK_LOG(info) << "new device " << new_device_name;
 
     if (new_device_name.empty()) {
         device_index = audio_interface.getDefaultInputDevice();
@@ -350,28 +306,68 @@ void Microphone::setupStreamFromConfig(const viam::sdk::ResourceConfig& cfg) {
         deviceInfo = audio_interface.getDeviceInfo(device_index);
     }
 
-    int new_sample_rate = attrs.count("sample_rate")
-        ? static_cast<int>(*attrs.at("sample_rate").get<double>())
-        : static_cast<int>(deviceInfo->defaultSampleRate);
-
-    int new_num_channels = attrs.count("num_channels")
-        ? static_cast<int>(*attrs.at("num_channels").get<double>())
-        : 1;
+    // Resolve final values (use params if specified, otherwise device defaults)
+    int new_sample_rate = params.sample_rate.value_or(static_cast<int>(deviceInfo->defaultSampleRate));
+    int new_num_channels = params.num_channels.value_or(1);
+    double new_latency = params.latency_ms.has_value()
+        ? params.latency_ms.value() / 1000.0  // Convert ms to seconds
+        : deviceInfo->defaultLowInputLatency;
 
     // Validate num_channels against device's max input channels
     if (new_num_channels > deviceInfo->maxInputChannels) {
-        VIAM_SDK_LOG(error) << "Requested " << num_channels_ << " channels but device '"
+        VIAM_SDK_LOG(error) << "Requested " << new_num_channels << " channels but device '"
                             << deviceInfo->name << "' only supports " << deviceInfo->maxInputChannels
                             << " input channels";
         throw std::invalid_argument("num_channels exceeds device's maximum input channels");
     }
 
-    // Parse latency (in milliseconds), convert to seconds for PortAudio
-    double new_latency = attrs.count("latency")
-        ? (*attrs.at("latency").get<double>()) / 1000.0  // Convert ms to seconds
-        : 0.0;  // 0.0 = use device default
+    // Check if config unchanged (only for reconfigure, not initial setup)
+    if (stream_) {
+        bool config_unchanged = (device_name_ == new_device_name) &&
+                                (sample_rate_ == new_sample_rate) &&
+                                (num_channels_ == new_num_channels) &&
+                                (latency_ == new_latency);
 
+        if (config_unchanged) {
+            VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Config unchanged, skipping stream restart";
+            return;
+        }
+    }
 
+    // This is initial setup, not reconfigure, start stream
+    if (!stream_) {
+        device_name_ = new_device_name;
+        sample_rate_ = new_sample_rate;
+        num_channels_ = new_num_channels;
+        latency_ = new_latency;
+
+        // Create audio context for initial setup
+        vsdk::audio_info info{vsdk::audio_codecs::PCM_16, new_sample_rate, new_num_channels};
+        int samples_per_chunk = new_sample_rate * CHUNK_DURATION_SECONDS;  // 100ms chunks
+        audio_context_ = std::make_shared<AudioStreamContext>(info, samples_per_chunk);
+
+        PaStream* new_stream = nullptr;
+        StreamConfig stream_config{
+            .device_index = device_index,
+            .channels = new_num_channels,
+            .sample_rate = new_sample_rate,
+            .latency = new_latency,
+            .callback = AudioCallback,
+            .user_data = audio_context_.get()
+         };
+
+        openStream(&new_stream, stream_config, pa_);
+        startStream(new_stream, pa_);
+
+        {
+            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+            stream_ = new_stream;
+        }
+
+        return;
+    }
+
+    // Config has changed, restart stream
     vsdk::audio_info info{vsdk::audio_codecs::PCM_16, new_sample_rate, new_num_channels};
     int samples_per_chunk = new_sample_rate * CHUNK_DURATION_SECONDS ;  // 100ms chunks
     auto new_audio_context = std::make_shared<AudioStreamContext>(info, samples_per_chunk);
@@ -465,7 +461,7 @@ void openStream(PaStream** stream,
     params.hostApiSpecificStreamInfo = nullptr;  // Must be NULL if not used
 
     VIAM_SDK_LOG(info) << "opening stream for device " << deviceInfo->name << " with sample rate " <<
-    config.sample_rate << "and suggested latency "  << params.suggestedLatency << "seconds";
+    config.sample_rate << " and suggested latency "  << params.suggestedLatency << " seconds";
 
     PaError err = audio_interface.openStream(
         stream,

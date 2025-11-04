@@ -23,7 +23,7 @@ AudioStreamContext::AudioStreamContext(
 
     // Initialize all elements to 0
     for (int i = 0; i < buffer_capacity; i++) {
-        audio_buffer[i].store(0, std::memory_order_relaxed);
+        audio_buffer[i].store(0);
     }
 }
 
@@ -39,27 +39,32 @@ void AudioStreamContext::write_sample(int16_t sample) {
     total_samples_written.fetch_add(1, std::memory_order_release);
 }
 
-int AudioStreamContext::read_samples(int16_t* buffer, int sample_count, uint64_t& position) {
+int AudioStreamContext::read_samples(int16_t* buffer, int sample_count, uint64_t& read_position) {
     // memory_order_acquire synronizes with the release in write_sample,
     // ensuring all samples written up to the current_write_pos are visible
     uint64_t current_write_pos = total_samples_written.load(std::memory_order_acquire);
 
-    // Check if that sample is still in the buffer (not overwritten by new samples)
-    if (current_write_pos > position + buffer_capacity) {
-        // Position has been overwritten, skip to oldest available sample
-        position = current_write_pos - buffer_capacity;
+    // trying to read position that hasn't been written yet - return zero samples
+    if(read_position > current_write_pos) {
+            return 0;
     }
 
-    uint64_t available = current_write_pos - position;
+    // Check if that sample is still in the buffer (not overwritten by new samples)
+    if (current_write_pos > read_position + buffer_capacity) {
+        // Position has been overwritten, skip to oldest available sample
+        read_position = current_write_pos - buffer_capacity;
+    }
+
+    uint64_t available = current_write_pos - read_position;
     int to_read = std::min(static_cast<uint64_t>(sample_count), available);
 
     for (int i = 0; i < to_read; i++) {
-        int index = (position + i) % buffer_capacity;
+        int index = (read_position + i) % buffer_capacity;
         buffer[i] = audio_buffer[index].load(std::memory_order_relaxed);
     }
 
     // update to the new position in the stream
-    position += to_read;
+    read_position += to_read;
 
     // return the actual number of samples read
     return to_read;
@@ -69,10 +74,10 @@ uint64_t AudioStreamContext::get_write_position() const {
     return total_samples_written.load(std::memory_order_acquire);
 }
 
-bool AudioStreamContext::is_position_valid(uint64_t position) const {
-    uint64_t current_write_pos = total_samples_written.load(std::memory_order_acquire);
-    return position < current_write_pos &&  (current_write_pos - position) <= buffer_capacity;
-}
+// bool AudioStreamContext::is_position_valid(uint64_t position) const {
+//     uint64_t current_write_pos = total_samples_written.load(std::memory_order_acquire);
+//     return position < current_write_pos &&  (current_write_pos - position) <= buffer_capacity;
+// }
 
 /**
  * PortAudio callback function - runs on real-time audio thread.
@@ -98,13 +103,13 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
     const int16_t* input = static_cast<const int16_t*>(inputBuffer);
 
     // First callback: establish anchor between PortAudio time and wall-clock time
-    if (!ctx->first_callback_captured.load(std::memory_order_relaxed)) {
+    if (!ctx->first_callback_captured.load()) {
         // the inputBufferADCTime describes the time when the
         // first sample of the input buffer was captured,
         // synced with the clock of the device
         ctx->first_sample_adc_time = timeInfo->inputBufferAdcTime;
         ctx->stream_start_time = std::chrono::system_clock::now();
-        ctx->first_callback_captured.store(true, std::memory_order_relaxed);
+        ctx->first_callback_captured.store(true);
     }
 
     int total_samples = framesPerBuffer * ctx->info.num_channels;
@@ -122,7 +127,6 @@ std::chrono::nanoseconds calculate_sample_timestamp(
 {
     // Convert sample number to elapsed time
     double seconds_per_sample = 1.0 / static_cast<double>(ctx->info.sample_rate_hz);
-    // Divide by num_channels since sample_number counts interleaved samples
     double elapsed_seconds = (sample_number / ctx->info.num_channels) * seconds_per_sample;
 
     auto elapsed_duration = std::chrono::duration_cast<std::chrono::nanoseconds>(

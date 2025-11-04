@@ -25,6 +25,15 @@ struct StreamConfig {
     void* user_data = nullptr;
 };
 
+struct ConfigParams {
+    std::string device_name;
+    std::optional<int> sample_rate;  // optional: may use device default
+    std::optional<int> num_channels;
+    std::optional<double> latency_ms;
+};
+
+ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
+
 void openStream(PaStream** stream,
                 const StreamConfig& config,
                 audio::portaudio::PortAudioInterface* pa = nullptr);
@@ -55,7 +64,7 @@ public:
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
-    void setupStreamFromConfig(const viam::sdk::ResourceConfig& cfg);
+    void setupStreamFromConfig(const ConfigParams& params);
 
     // Member variables
     std::string device_name_;

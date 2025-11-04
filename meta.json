@@ -3,7 +3,7 @@
   "module_id": "viam:audio",
   "visibility": "public",
   "url": "https://github.com/viam-modules/audio",
-  "description": "C++ audio module",
+  "description": "audio module for microphones and speakers",
   "models": [
     {
       "api": "rdk:component:audioin",

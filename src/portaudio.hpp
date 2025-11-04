@@ -76,6 +76,6 @@ public:
 
 };
 
-}
-}
+} // namespace portaudio
+} // namespace audio
 

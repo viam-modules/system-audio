@@ -46,7 +46,6 @@ struct AudioStreamContext {
 
     uint64_t get_write_position() const;
 
-    bool is_position_valid(uint64_t position) const;
 };
 
 std::chrono::nanoseconds calculate_sample_timestamp(

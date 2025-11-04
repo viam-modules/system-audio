@@ -34,9 +34,3 @@ endfunction()
 
 audio_add_gtest(microphone_test.cpp)
 audio_add_gtest(audio_stream_test.cpp)
-
-
-
-
-
-
