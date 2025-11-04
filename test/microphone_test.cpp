@@ -760,7 +760,7 @@ TEST_F(PortAudioTest, TestOpenStreamSuccessDefaultDevice) {
 
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
                                       static_cast<double>(sampleRate),
-                                      paFramesPerBufferUnspecified, paClipOff,
+                                      ::testing::_, ::testing::_,
                                       ::testing::_, ::testing::_))
         .Times(1)
         .WillOnce(::testing::Return(paNoError));
@@ -793,7 +793,7 @@ TEST_F(PortAudioTest, TestOpenStreamSuccessSpecificDevice) {
 
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
                                     static_cast<double>(sampleRate),
-                                    paFramesPerBufferUnspecified, paClipOff,
+                                    ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_))
         .Times(1)
         .WillOnce(::testing::Return(paNoError));
