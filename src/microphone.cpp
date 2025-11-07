@@ -289,13 +289,19 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
             throw std::runtime_error("no default input device found");
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
-        new_device_name = deviceInfo ? deviceInfo->name : "";
+        if (!deviceInfo) {
+            throw std::runtime_error("failed to get device info for default device");
+        }
+        new_device_name = deviceInfo->name;
     } else {
         device_index = findDeviceByName(new_device_name, &audio_interface);
         if (device_index == paNoDevice) {
             throw std::runtime_error("audio input device with name " + new_device_name + " not found");
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
+        if (!deviceInfo) {
+            throw std::runtime_error("failed to get device info for device: " + new_device_name);
+        }
     }
 
     // Resolve final values (use params if specified, otherwise device defaults)
@@ -328,28 +334,25 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
 
     // This is initial setup, not reconfigure, start stream
     if (!stream_) {
-        device_name_ = new_device_name;
-        sample_rate_ = new_sample_rate;
-        num_channels_ = new_num_channels;
-        latency_ = new_latency;
-
         // Create audio context for initial setup
         vsdk::audio_info info{vsdk::audio_codecs::PCM_16, new_sample_rate, new_num_channels};
         int samples_per_chunk = new_sample_rate * CHUNK_DURATION_SECONDS;  // 100ms chunks
-        audio_context_ = std::make_shared<AudioStreamContext>(info, samples_per_chunk);
+        auto new_audio_context = std::make_shared<AudioStreamContext>(info, samples_per_chunk);
+
+        // Set configuration under lock before opening stream
+        {
+            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+            device_name_ = new_device_name;
+            device_index_ = device_index;
+            sample_rate_ = new_sample_rate;
+            num_channels_ = new_num_channels;
+            latency_ = new_latency;
+            audio_context_ = new_audio_context;
+        }
 
         PaStream* new_stream = nullptr;
-        StreamConfig stream_config{
-            .device_index = device_index,
-            .channels = new_num_channels,
-            .sample_rate = new_sample_rate,
-            .latency = new_latency,
-            .callback = AudioCallback,
-            .user_data = audio_context_.get()
-         };
-
-        openStream(&new_stream, stream_config, pa_);
-        startStream(new_stream, pa_);
+        openStream(&new_stream);
+        startStream(new_stream);
 
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
@@ -371,32 +374,28 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
         old_stream = stream_;
         old_context = audio_context_;  // keep old context alive for any current streams
     }
-    if (old_stream) shutdownStream(old_stream, pa_);
+    if (old_stream) shutdownStream(old_stream);
 
-
-    // Open and start new stream
-    PaStream* new_stream = nullptr;
-    StreamConfig stream_config{
-        .device_index = device_index,
-        .channels = new_num_channels,
-        .sample_rate = new_sample_rate,
-        .latency = new_latency,
-        .callback = AudioCallback,
-        .user_data = new_audio_context.get()
-    };
-
-    openStream(&new_stream, stream_config, pa_);
-    startStream(new_stream, pa_);
-
-    // Swap in new stream/context under lock
+    // Set new configuration under lock (needed before openStream since it uses these)
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        stream_ = new_stream;
-        audio_context_ = new_audio_context;
         device_name_ = new_device_name;
+        device_index_ = device_index;
         sample_rate_ = new_sample_rate;
         num_channels_ = new_num_channels;
         latency_ = new_latency;
+        audio_context_ = new_audio_context;
+    }
+
+    // Open and start new stream
+    PaStream* new_stream = nullptr;
+    openStream(&new_stream);
+    startStream(new_stream);
+
+    // Swap in new stream under lock
+    {
+        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+        stream_ = new_stream;
     }
 
     VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Stream configured successfully";
@@ -427,60 +426,70 @@ void startPortAudio(audio::portaudio::PortAudioInterface* pa) {
       }
 }
 
-void openStream(PaStream** stream,
-                const StreamConfig& config,
-                audio::portaudio::PortAudioInterface* pa) {
-
+void Microphone::openStream(PaStream** stream) {
     audio::portaudio::RealPortAudio real_pa;
-    audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+    audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
 
-    // Get device info
-    const PaDeviceInfo* deviceInfo = audio_interface.getDeviceInfo(config.device_index);
-    if (!deviceInfo) {
-        throw std::runtime_error("failed to get device info for device index " + std::to_string(config.device_index));
-    }
-
-    VIAM_SDK_LOG(debug) << "Device: " << deviceInfo->name
-                         << ", Default sample rate: " << deviceInfo->defaultSampleRate
-                         << ", Max input channels: " << deviceInfo->maxInputChannels;
+    VIAM_SDK_LOG(debug) << "Opening stream for device '" << device_name_
+                         << "' (index " << device_index_ << ")"
+                         << " with sample rate: " << sample_rate_
+                         << ", channels: " << num_channels_;
 
     // Setup stream parameters
     PaStreamParameters params;
-    params.device = config.device_index;
-    params.channelCount = config.channels;
+    params.device = device_index_;
+    params.channelCount = num_channels_;
     params.sampleFormat = paInt16;
-    params.suggestedLatency = config.latency;
+    params.suggestedLatency = latency_;
     params.hostApiSpecificStreamInfo = nullptr;  // Must be NULL if not used
 
-    VIAM_SDK_LOG(info) << "opening stream for device " << deviceInfo->name << " with sample rate " <<
-    config.sample_rate << " and suggested latency "  << params.suggestedLatency << " seconds";
+    PaError err = audio_interface.isFormatSupported(&params, nullptr, sample_rate_);
+    if (err != paNoError) {
+        std::ostringstream buffer;
+        buffer << "Audio format not supported by device '" << device_name_
+               << "' (index " << device_index_ << "): "
+               << Pa_GetErrorText(err) << "\n"
+               << "Requested configuration:\n"
+               << "  - Sample rate: " << sample_rate_ << " Hz\n"
+               << "  - Channels: " << num_channels_ << "\n"
+               << "  - Format: 16-bit PCM\n"
+               << "  - Latency: " << latency_ << " seconds";
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::runtime_error(buffer.str());
+    }
 
-    PaError err = audio_interface.openStream(
+    VIAM_SDK_LOG(info) << "Opening stream for device '" << device_name_
+                       << "' (index " << device_index_ << ")"
+                       << " with sample rate " << sample_rate_
+                       << " and latency " << params.suggestedLatency << " seconds";
+
+    err = audio_interface.openStream(
         stream,
         &params,              // input params
         NULL,                 // output params
-        config.sample_rate,
+        sample_rate_,
         paFramesPerBufferUnspecified, // let portaudio pick the frames per buffer
         paNoFlag,            // stream flags - enable default clipping behavior
-        config.callback,
-        config.user_data     // user data to pass through to callback
+        AudioCallback,
+        audio_context_.get() // user data to pass through to callback
     );
 
     if (err != paNoError) {
         std::ostringstream buffer;
-        buffer << "Failed to open audio stream for device '" << deviceInfo->name << "': "
+        buffer << "Failed to open audio stream for device '" << device_name_
+               << "' (index " << device_index_ << "): "
                << Pa_GetErrorText(err)
-               << " (sample_rate=" << config.sample_rate
-               << ", channels=" << config.channels
+               << " (sample_rate=" << sample_rate_
+               << ", channels=" << num_channels_
                << ", latency=" << params.suggestedLatency << "s)";
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::runtime_error(buffer.str());
     }
 }
 
-void startStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa) {
+void Microphone::startStream(PaStream* stream) {
     audio::portaudio::RealPortAudio real_pa;
-    audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+    audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
 
     PaError err = audio_interface.startStream(stream);
     if (err != paNoError) {
@@ -510,9 +519,9 @@ PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAu
 
 }
 
-void shutdownStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa) {
+void Microphone::shutdownStream(PaStream* stream) {
     audio::portaudio::RealPortAudio real_pa;
-    audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+    audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
 
     PaError err = audio_interface.stopStream(stream);
     if (err < 0) {

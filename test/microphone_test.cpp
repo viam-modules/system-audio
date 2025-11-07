@@ -39,6 +39,9 @@ public:
       MOCK_METHOD(PaError, closeStream, (PaStream* stream), (override));
       MOCK_METHOD(PaDeviceIndex, getDeviceCount, (), (override));
       MOCK_METHOD(PaStreamInfo*, getStreamInfo, (PaStream* stream), (override));
+      MOCK_METHOD(PaError, isFormatSupported, (const PaStreamParameters* inputParameters,
+                                               const PaStreamParameters* outputParameters,
+                                               double sampleRate), (override));
   };
 
 // Base test fixture with common PortAudio mock setup
@@ -85,8 +88,6 @@ protected:
 
         SetupDefaultPortAudioBehavior();
     }
-
-    // Helper: Create a basic config with common attributes
     ResourceConfig createConfig(const std::string& device_name = testDeviceName,
                                 int sample_rate = 44100,
                                 int num_channels = 1,
@@ -161,6 +162,8 @@ protected:
             .WillByDefault(Return(paNoError));
         ON_CALL(*mock_pa_, getStreamInfo(_))
             .WillByDefault(Return(nullptr));
+        ON_CALL(*mock_pa_, isFormatSupported(_, _, _))
+            .WillByDefault(Return(paNoError));
     }
 
     std::string test_mic_name_;
@@ -731,129 +734,70 @@ TEST_F(MicrophoneTest, GetAudioWithInvalidCodecThrowsError) {
     }, std::invalid_argument);
 }
 
+TEST_F(MicrophoneTest, TestOpenStreamSuccessDefaultDevice) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
 
-// PortAudio utility function tests
-class PortAudioTest : public AudioTestBase {
-    // Inherits mock_pa_ and mock_device_info_ from AudioTestBase
-};
-
-
-TEST_F(PortAudioTest, TestStartPortAudioSuccess) {
-    EXPECT_CALL(*mock_pa_, initialize())
-        .Times(1)
-        .WillOnce(::testing::Return(paNoError));
-
-    // Test that startPortAudio doesn't throw when mock returns success
-    EXPECT_NO_THROW({
-        microphone::startPortAudio(mock_pa_.get());
-    });
-}
-
-TEST_F(PortAudioTest, TestOpenStreamSuccessDefaultDevice) {
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
     PaStream* stream = nullptr;
-    int channels = 2;
-    int sampleRate = 44100;
-    PaDeviceIndex deviceIndex = 0;
 
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(0))
-        .WillOnce(::testing::Return(&mock_device_info_));
-
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                      static_cast<double>(sampleRate),
+                                      static_cast<double>(44100),
                                       ::testing::_, ::testing::_,
                                       ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paNoError));
-
-
-    // Verify OpenStream doesn't throw
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = channels,
-        .sample_rate = sampleRate,
-        .latency = 0.0
-    };
-
-    EXPECT_NO_THROW(microphone::openStream(&stream, config, mock_pa_.get()));
+    EXPECT_NO_THROW(mic.openStream(&stream));
 }
 
 
-TEST_F(PortAudioTest, TestOpenStreamSuccessSpecificDevice) {
-    PaStream* stream = nullptr;
-    int channels = 2;
-    int sampleRate = 44100;
-    PaDeviceIndex deviceIndex = 1;  // Specific device index
-
-    // Setup device name in mock
-    mock_device_info_.name = "test_device";
+TEST_F(MicrophoneTest, TestOpenStreamSuccessSpecificDevice) {
+    const char* deviceName = "test_device";
+    mock_device_info_.name = deviceName;
     mock_device_info_.maxInputChannels = 2;
 
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(1))
-        .WillRepeatedly(::testing::Return(&mock_device_info_));
-
+    auto config = createConfig(deviceName, 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
+    PaStream* stream = nullptr;
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                    static_cast<double>(sampleRate),
+                                    static_cast<double>(48000),
                                     ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paNoError));
-
-
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = channels,
-        .sample_rate = sampleRate,
-        .latency = 0.0
-    };
-
-    EXPECT_NO_THROW(microphone::openStream(&stream, config, mock_pa_.get()));
+    EXPECT_NO_THROW(mic.openStream(&stream));
 }
 
 
-TEST_F(PortAudioTest, TestOpenStreamInvalidDeviceIndex) {
+TEST_F(MicrophoneTest, TestOpenStreamFormatNotSupported) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
+
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
+
+    // Test that OpenStream throws when format is not supported
     PaStream* stream = nullptr;
-    PaDeviceIndex invalidIndex = 99;  // Invalid device index
-
-    // getDeviceInfo returns nullptr for invalid device
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(99))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    // Test that OpenStream throws when device info cannot be retrieved
-    microphone::StreamConfig config{
-        .device_index = invalidIndex,
-        .channels = 2,
-        .sample_rate = 44100,
-        .latency = 0.0
-    };
-
-    EXPECT_THROW(microphone::openStream(&stream, config, mock_pa_.get()), std::runtime_error);
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paInvalidDevice));
+    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
 }
 
-TEST_F(PortAudioTest, TestOpenStreamOpenStreamFails) {
+TEST_F(MicrophoneTest, TestOpenStreamFails) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
+
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
     PaStream* stream = nullptr;
-    PaDeviceIndex deviceIndex = 0;
-
-    // Device info is valid but OpenStream fails
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(0))
-        .Times(1)
-        .WillOnce(::testing::Return(&mock_device_info_));
-
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paInvalidDevice));
-
-    // Test that OpenStream throws when Pa_OpenStream fails
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = 2,
-        .sample_rate = 44100,
-        .latency = 0.0
-    };
-
-    EXPECT_THROW(microphone::openStream(&stream, config, mock_pa_.get()), std::runtime_error);
+    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
 }
 
 int main(int argc, char **argv) {

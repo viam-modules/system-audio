@@ -19,6 +19,9 @@ public:
     virtual PaError closeStream(PaStream *stream) = 0;
     virtual PaDeviceIndex getDeviceCount() = 0;
     virtual const PaStreamInfo* getStreamInfo(PaStream *stream) = 0;
+    virtual PaError isFormatSupported(const PaStreamParameters* inputParameters,
+                                      const PaStreamParameters* outputParameters,
+                                      double sampleRate) = 0;
     virtual ~PortAudioInterface() = default;
 };
 
@@ -72,6 +75,12 @@ public:
 
       const PaStreamInfo* getStreamInfo(PaStream *stream) override {
          return Pa_GetStreamInfo(stream);
+      }
+
+      PaError isFormatSupported(const PaStreamParameters* inputParameters,
+                                const PaStreamParameters* outputParameters,
+                                double sampleRate) override {
+         return Pa_IsFormatSupported(inputParameters, outputParameters, sampleRate);
       }
 
 };

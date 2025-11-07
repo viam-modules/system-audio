@@ -16,15 +16,6 @@
 namespace microphone {
 namespace vsdk = ::viam::sdk;
 
-struct StreamConfig {
-    PaDeviceIndex device_index;
-    int channels;
-    int sample_rate;
-    double latency = 0.0;
-    PaStreamCallback* callback = nullptr;
-    void* user_data = nullptr;
-};
-
 struct ConfigParams {
     std::string device_name;
     std::optional<int> sample_rate;  // optional: may use device default
@@ -33,13 +24,7 @@ struct ConfigParams {
 };
 
 ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
-
-void openStream(PaStream** stream,
-                const StreamConfig& config,
-                audio::portaudio::PortAudioInterface* pa = nullptr);
-void startStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
 PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface* pa= nullptr);
-void shutdownStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
 void startPortAudio(audio::portaudio::PortAudioInterface* pa = nullptr);
 
 
@@ -64,10 +49,19 @@ public:
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
+
+    // internal functions, public for testing
+    void openStream(PaStream** stream);
+    void startStream(PaStream* stream);
+    void shutdownStream(PaStream* stream);
+
+private:
     void setupStreamFromConfig(const ConfigParams& params);
 
+public:
     // Member variables
     std::string device_name_;
+    PaDeviceIndex device_index_;
     int sample_rate_;
     int num_channels_;
     double latency_;
