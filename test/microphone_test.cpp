@@ -763,6 +763,9 @@ TEST_F(MicrophoneTest, GetAudioWithInvalidCodecThrowsError) {
     }, std::invalid_argument);
 }
 
+TEST_F(MicrophoneTest, TestOpenStreamSuccessDefaultDevice) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
 
 // InputStreamContext validation tests
 TEST_F(MicrophoneTest, InputStreamCOntextThrowsOnZeroNumChannels) {

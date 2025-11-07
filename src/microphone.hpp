@@ -62,6 +62,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
                              int& samples_per_chunk,
                              int& device_samples_per_chunk);
 
+public:
     // Member variables
     std::string device_name_;
     PaDeviceIndex device_index_;
