@@ -133,6 +133,8 @@ void Microphone::get_audio(std::string const& codec,
 
     // Validate codec is supported
     if (codec != vsdk::audio_codecs::PCM_16) {
+        VIAM_SDK_LOG(error) << "Unsupported codec: " + codec +
+            ". Supported codecs: pcm16";
         throw std::invalid_argument("Unsupported codec: " + codec +
             ". Supported codecs: pcm16");
     }
@@ -178,6 +180,7 @@ void Microphone::get_audio(std::string const& codec,
         buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk <<
         " with sample rate: " << stream_sample_rate << " num channels: " << stream_num_channels
         << " chunk duration seconds: " << CHUNK_DURATION_SECONDS;
+        VIAM_SDK_LOG(error) << buffer.str();
         throw std::runtime_error(buffer.str());
     }
 
@@ -301,13 +304,16 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     if (new_device_name.empty()) {
         device_index = audio_interface.getDefaultInputDevice();
         if (device_index == paNoDevice) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] No default input device found";
             throw std::runtime_error("no default input device found");
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
         if (!deviceInfo) {
-                throw std::runtime_error("failed to get device info for default device");
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for default device";
+            throw std::runtime_error("failed to get device info for default device");
         }
         if (!deviceInfo->name) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get the name of the default device";
             throw std::runtime_error("failed to get the name of the default device");
         }
         new_device_name = deviceInfo->name;
@@ -315,11 +321,15 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     } else {
         device_index = findDeviceByName(new_device_name, audio_interface);
         if (device_index == paNoDevice) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio input device with name '"
+                               << new_device_name << "' not found";
             throw std::runtime_error("audio input device with name " + new_device_name + " not found");
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
         if (!deviceInfo) {
-                throw std::runtime_error("failed to get device info for device: " + new_device_name);
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device: "
+                               << new_device_name;
+            throw std::runtime_error("failed to get device info for device: " + new_device_name);
         }
     }
 
@@ -430,6 +440,7 @@ void startPortAudio(audio::portaudio::PortAudioInterface* pa) {
     if (err != 0) {
         std::ostringstream buffer;
         buffer << "failed to initialize PortAudio library: " << Pa_GetErrorText(err);
+        VIAM_SDK_LOG(error) << "[startPortAudio] " << buffer.str();
         throw std::runtime_error(buffer.str());
     }
 
@@ -550,6 +561,7 @@ void Microphone::shutdownStream(PaStream* stream) {
     if (err < 0) {
         std::ostringstream buffer;
         buffer << "failed to stop the stream: " <<  Pa_GetErrorText(err);
+        VIAM_SDK_LOG(error) << "[shutdownStream] " << buffer.str();
         throw std::runtime_error(buffer.str());
     }
 
@@ -558,6 +570,7 @@ void Microphone::shutdownStream(PaStream* stream) {
     if (err < 0) {
         std::ostringstream buffer;
         buffer << "failed to close the stream: " <<  Pa_GetErrorText(err);
+        VIAM_SDK_LOG(error) << "[shutdownStream] " << buffer.str();
         throw std::runtime_error(buffer.str());
     }
 }

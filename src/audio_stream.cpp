@@ -21,12 +21,18 @@ AudioStreamContext::AudioStreamContext(
     , total_samples_written(0)
 {
     if (audio_info.sample_rate_hz <= 0) {
+        VIAM_SDK_LOG(error) << "[AudioStreamContext] sample_rate_hz must be positive, got: "
+                           << audio_info.sample_rate_hz;
         throw std::invalid_argument("sample_rate_hz must be positive");
     }
     if (audio_info.num_channels <= 0) {
+        VIAM_SDK_LOG(error) << "[AudioStreamContext] num_channels must be positive, got: "
+                           << audio_info.num_channels;
         throw std::invalid_argument("num_channels must be positive");
     }
     if (buffer_duration_seconds <= 0) {
+        VIAM_SDK_LOG(error) << "[AudioStreamContext] buffer_duration_seconds must be positive, got: "
+                           << buffer_duration_seconds;
         throw std::invalid_argument("buffer_duration_seconds must be positive");
     }
 
@@ -34,12 +40,16 @@ AudioStreamContext::AudioStreamContext(
     buffer_capacity = audio_info.sample_rate_hz * audio_info.num_channels * buffer_duration_seconds;
 
     if (buffer_capacity <= 0) {
+        VIAM_SDK_LOG(error) << "[AudioStreamContext] buffer_capacity must be positive, calculated: "
+                           << buffer_capacity;
         throw std::invalid_argument("buffer_capacity must be positive");
     }
 
     try {
         audio_buffer = std::make_unique<std::atomic<int16_t>[]>(buffer_capacity);
     } catch (const std::bad_alloc& e) {
+        VIAM_SDK_LOG(error) << "[AudioStreamContext] Failed to allocate audio buffer of size "
+                           << buffer_capacity << " samples: " << e.what();
         throw std::runtime_error("Failed to allocate audio buffer of size " +
                                  std::to_string(buffer_capacity) + " samples: " + e.what());
     }
