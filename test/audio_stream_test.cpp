@@ -189,7 +189,7 @@ TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
     EXPECT_NEAR(timestamp2.count(), baseline_ns + 1'000'000'000, 1000);  // ~1 second
 
     // Test timestamp for sample at 0.5 seconds (22050 samples)
-    auto timestamp3 = context_->calculate_sample_timestamp(22050);
+    auto timestamp3 =  context_->calculate_sample_timestamp(22050);
     EXPECT_NEAR(timestamp3.count(), baseline_ns + 500'000'000, 1000);  // ~0.5 seconds
 }
 

@@ -12,18 +12,10 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <tuple>
 
 namespace microphone {
 namespace vsdk = ::viam::sdk;
-
-struct StreamConfig {
-    PaDeviceIndex device_index;
-    int channels;
-    int sample_rate;
-    double latency = 0.0;
-    PaStreamCallback* callback = nullptr;
-    void* user_data = nullptr;
-};
 
 struct ConfigParams {
     std::string device_name;
@@ -32,14 +24,24 @@ struct ConfigParams {
     std::optional<double> latency_ms;
 };
 
-ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
+struct ActiveStreamConfig {
+    std::string device_name;
+    int sample_rate;
+    int num_channels;
+    double latency;
 
-void openStream(PaStream** stream,
-                const StreamConfig& config,
-                audio::portaudio::PortAudioInterface* pa = nullptr);
-void startStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
-PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface* pa= nullptr);
-void shutdownStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
+    bool operator==(const ActiveStreamConfig& other) const {
+        return std::tie(device_name, sample_rate, num_channels, latency) ==
+               std::tie(other.device_name, other.sample_rate, other.num_channels, other.latency);
+    }
+
+    bool operator!=(const ActiveStreamConfig& other) const {
+        return !(*this == other);
+    }
+};
+
+ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
+PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface& pa);
 void startPortAudio(audio::portaudio::PortAudioInterface* pa = nullptr);
 
 
@@ -64,10 +66,19 @@ public:
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
+
+    // internal functions, public for testing
+    void openStream(PaStream** stream);
+    void startStream(PaStream* stream);
+    void shutdownStream(PaStream* stream);
+
+private:
     void setupStreamFromConfig(const ConfigParams& params);
 
+public:
     // Member variables
     std::string device_name_;
+    PaDeviceIndex device_index_;
     int sample_rate_;
     int num_channels_;
     double latency_;
