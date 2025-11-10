@@ -54,6 +54,7 @@ protected:
         // Setup mock device info with common defaults
         mock_device_info_.defaultLowInputLatency = 0.01;
         mock_device_info_.defaultLowOutputLatency = 0.01;
+        mock_device_info_.defaultSampleRate = 44100.0;
         mock_device_info_.maxInputChannels = 2;
         mock_device_info_.maxOutputChannels = 0;
         mock_device_info_.name = testDeviceName;
@@ -264,16 +265,6 @@ TEST_F(MicrophoneTest, DoCommandReturnsEmptyStruct) {
 
     ProtoStruct command{};
     auto result = mic.do_command(command);
-
-    EXPECT_TRUE(result.empty());
-}
-
-
-TEST_F(MicrophoneTest, GeometriesReturnsEmptyStruct) {
-    microphone::Microphone mic(test_deps_, *test_config_, mock_pa_.get());
-
-    ProtoStruct extra{};
-    auto result = mic.get_geometries(extra);
 
     EXPECT_TRUE(result.empty());
 }
@@ -794,6 +785,67 @@ TEST_F(MicrophoneTest, TestOpenStreamFails) {
                                     ::testing::_, ::testing::_))
         .WillOnce(::testing::Return(paInvalidDevice));
     EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
+}
+
+// AudioStreamContext validation tests
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroNumChannels) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 0;  // Invalid
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeNumChannels) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = -1;  // Invalid
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroSampleRate) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 0;  // Invalid
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeSampleRate) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = -44100;  // Invalid
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroBufferDuration) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 0);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeBufferDuration) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, -5);
+    }, std::invalid_argument);
 }
 
 int main(int argc, char **argv) {

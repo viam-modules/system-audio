@@ -14,7 +14,7 @@ namespace vsdk = ::viam::sdk;
 
 constexpr int BUFFER_DURATION_SECONDS = 10;  // How much audio history to keep in buffer
 constexpr double CHUNK_DURATION_SECONDS = 0.1;   // 100ms chunks (10 chunks per second)
-
+constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
 
 // AudioStreamContext managers a circular buffer of audio for a single
 // stream.
@@ -38,18 +38,17 @@ struct AudioStreamContext {
                       int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
 
     // Writes an audio sample to the audio buffer
-    void write_sample(int16_t sample);
-
+    void write_sample(int16_t sample) noexcept;
 
     // Read sample_count samples from the circular buffer starting at the inputted postion
-    int read_samples(int16_t* buffer, int sample_count, uint64_t& position);
+    int read_samples(int16_t* buffer, int sample_count, uint64_t& position) noexcept;
 
-    uint64_t get_write_position() const;
+    uint64_t get_write_position() const noexcept;
 
 };
 
 std::chrono::nanoseconds calculate_sample_timestamp(
-    const AudioStreamContext* ctx,
+    const AudioStreamContext& ctx,
     uint64_t sample_number);
 
 /**

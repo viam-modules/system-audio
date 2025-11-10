@@ -58,15 +58,24 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] sample_rate attribute must be a number";
             throw std::invalid_argument("sample_rate attribute must be a number");
         }
+        double sample_rate = *attrs.at("sample_rate").get<double>();
+        if (sample_rate <= 0) {
+            VIAM_SDK_LOG(error) << "[validate] sample rate must be greater than zero";
+            throw std::invalid_argument("sample rate must be greater than zero");
+        }
     }
-
     if(attrs.count("num_channels")) {
         if (!attrs["num_channels"].is_a<double>()) {
             VIAM_SDK_LOG(error) << "[validate] num_channels attribute must be a number";
             throw std::invalid_argument("num_channels attribute must be a number");
         }
-    }
+        double num_channels = *attrs.at("num_channels").get<double>();
+        if (num_channels <= 0) {
+            VIAM_SDK_LOG(error) << "[validate] num_channels must be greater than zero";
+            throw std::invalid_argument(" num_channels must be greater than zero");
+        }
 
+    }
     if(attrs.count("latency")) {
         if (!attrs["latency"].is_a<double>()) {
             VIAM_SDK_LOG(error) << "[validate] latency attribute must be a number";
@@ -156,16 +165,21 @@ void Microphone::get_audio(std::string const& codec,
     }
 
     // Get sample rate and channels - will be updated if context changes
-    int stream_sample_rate;
-    int stream_num_channels;
-    int samples_per_chunk;
-
+    int stream_sample_rate = 0;
+    int stream_num_channels = 0;
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_sample_rate = sample_rate_;
         stream_num_channels = num_channels_;
     }
-    samples_per_chunk = (stream_sample_rate * CHUNK_DURATION_SECONDS) * stream_num_channels;
+    int samples_per_chunk = (stream_sample_rate * CHUNK_DURATION_SECONDS) * stream_num_channels;
+    if (samples_per_chunk <= 0){
+        std::ostringstream buffer;
+        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk <<
+        " with sample rate: " << stream_sample_rate << " num channels: " << stream_num_channels
+        << " chunk duration seconds: " << CHUNK_DURATION_SECONDS;
+        throw std::runtime_error(buffer.str());
+    }
 
     while (std::chrono::steady_clock::now() < end_time) {
         // Get current context (may change if config changes)
@@ -223,11 +237,11 @@ void Microphone::get_audio(std::string const& codec,
 
         // Calculate timestamps based on sample position in stream
         chunk.start_timestamp_ns = calculate_sample_timestamp(
-            current_context.get(),
+            *current_context,
             chunk_start_position
         );
         chunk.end_timestamp_ns = calculate_sample_timestamp(
-            current_context.get(),
+            *current_context,
             chunk_start_position + samples_read
         );
 
@@ -239,6 +253,7 @@ void Microphone::get_audio(std::string const& codec,
         }
 
         if (!chunk_handler(std::move(chunk))) {
+            // if the chunk callback returned false, the stream has ended
             VIAM_RESOURCE_LOG(info) << "Chunk handler returned false, stopping";
             {
                 std::lock_guard<std::mutex> lock(stream_ctx_mu_);
@@ -270,7 +285,7 @@ viam::sdk::audio_properties Microphone::get_properties(const viam::sdk::ProtoStr
 }
 
 std::vector<viam::sdk::GeometryConfig> Microphone::get_geometries(const viam::sdk::ProtoStruct& extra) {
-    return std::vector<viam::sdk::GeometryConfig>();
+    throw std::runtime_error("get_geometries is unimplemented");
 }
 
 
@@ -279,9 +294,9 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
 
     // Determine device and get device info
-    std::string new_device_name = params.device_name.empty() ? device_name_ : params.device_name;
-    PaDeviceIndex device_index;
-    const PaDeviceInfo* deviceInfo;
+    std::string new_device_name = params.device_name;
+    PaDeviceIndex device_index = paNoDevice;
+    const PaDeviceInfo* deviceInfo = nullptr;
 
     if (new_device_name.empty()) {
         device_index = audio_interface.getDefaultInputDevice();
@@ -290,19 +305,24 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
         if (!deviceInfo) {
-            throw std::runtime_error("failed to get device info for default device");
+                throw std::runtime_error("failed to get device info for default device");
+        }
+        if (!deviceInfo->name) {
+            throw std::runtime_error("failed to get the name of the default device");
         }
         new_device_name = deviceInfo->name;
+
     } else {
-        device_index = findDeviceByName(new_device_name, &audio_interface);
+        device_index = findDeviceByName(new_device_name, audio_interface);
         if (device_index == paNoDevice) {
             throw std::runtime_error("audio input device with name " + new_device_name + " not found");
         }
         deviceInfo = audio_interface.getDeviceInfo(device_index);
         if (!deviceInfo) {
-            throw std::runtime_error("failed to get device info for device: " + new_device_name);
+                throw std::runtime_error("failed to get device info for device: " + new_device_name);
         }
     }
+
 
     // Resolve final values (use params if specified, otherwise device defaults)
     int new_sample_rate = params.sample_rate.value_or(static_cast<int>(deviceInfo->defaultSampleRate));
@@ -321,12 +341,10 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
 
     // Check if config unchanged (only for reconfigure, not initial setup)
     if (stream_) {
-        bool config_unchanged = (device_name_ == new_device_name) &&
-                                (sample_rate_ == new_sample_rate) &&
-                                (num_channels_ == new_num_channels) &&
-                                (latency_ == new_latency);
+        ActiveStreamConfig current_config{device_name_, sample_rate_, num_channels_, latency_};
+        ActiveStreamConfig new_config{new_device_name, new_sample_rate, new_num_channels, new_latency};
 
-        if (config_unchanged) {
+        if (current_config == new_config) {
             VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Config unchanged, skipping stream restart";
             return;
         }
@@ -351,6 +369,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
         }
 
         PaStream* new_stream = nullptr;
+        // These will throw in case of error
         openStream(&new_stream);
         startStream(new_stream);
 
@@ -499,14 +518,18 @@ void Microphone::startStream(PaStream* stream) {
     }
 }
 
-PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface* pa) {
-    int deviceCount = pa->getDeviceCount();
+PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface& pa) {
+    int deviceCount = pa.getDeviceCount();
      if (deviceCount < 0) {
           return paNoDevice;
       }
 
       for (PaDeviceIndex i = 0; i< deviceCount; i++) {
-        const PaDeviceInfo* info = pa->getDeviceInfo(i);
+        const PaDeviceInfo* info = pa.getDeviceInfo(i);
+         if (!info) {
+            VIAM_SDK_LOG(warn) << "could not get device info for device index " << i << ", skipping";
+            continue;
+        }
 
         if (name == info->name) {
             // input and output devices can have the same name so check that it has input channels.

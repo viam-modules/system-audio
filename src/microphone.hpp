@@ -12,6 +12,7 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <tuple>
 
 namespace microphone {
 namespace vsdk = ::viam::sdk;
@@ -23,8 +24,24 @@ struct ConfigParams {
     std::optional<double> latency_ms;
 };
 
+struct ActiveStreamConfig {
+    std::string device_name;
+    int sample_rate;
+    int num_channels;
+    double latency;
+
+    bool operator==(const ActiveStreamConfig& other) const {
+        return std::tie(device_name, sample_rate, num_channels, latency) ==
+               std::tie(other.device_name, other.sample_rate, other.num_channels, other.latency);
+    }
+
+    bool operator!=(const ActiveStreamConfig& other) const {
+        return !(*this == other);
+    }
+};
+
 ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
-PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface* pa= nullptr);
+PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface& pa);
 void startPortAudio(audio::portaudio::PortAudioInterface* pa = nullptr);
 
 
