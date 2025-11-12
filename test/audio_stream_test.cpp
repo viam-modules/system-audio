@@ -2,10 +2,21 @@
 #include <gmock/gmock.h>
 #include <thread>
 #include <chrono>
+#include <viam/sdk/common/instance.hpp>
 #include "audio_stream.hpp"
 
 using namespace microphone;
 using namespace viam::sdk;
+
+class AudioStreamTestEnvironment : public ::testing::Environment {
+public:
+  void SetUp() override { instance_ = std::make_unique<viam::sdk::Instance>(); }
+
+  void TearDown() override { instance_.reset(); }
+
+private:
+  std::unique_ptr<viam::sdk::Instance> instance_;
+};
 
 class AudioStreamContextTest : public ::testing::Test {
 protected:
@@ -311,5 +322,6 @@ TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    ::testing::AddGlobalTestEnvironment(new AudioStreamTestEnvironment);
     return RUN_ALL_TESTS();
 }
