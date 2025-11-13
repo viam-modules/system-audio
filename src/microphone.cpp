@@ -103,9 +103,8 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
             if (active_streams_ > 0) {
-                VIAM_SDK_LOG(warn) << "[reconfigure] Reconfiguring with " << active_streams_
-                                   << " active stream(s). This may cause audio gaps or break "
-                                   << "encoded audio. Clients should monitor audio_info in chunks.";
+                VIAM_SDK_LOG(info) << "[reconfigure] Reconfiguring with " << active_streams_
+                                   << " active stream(s). See README for reconfiguration considerations.";
             }
         }
 
