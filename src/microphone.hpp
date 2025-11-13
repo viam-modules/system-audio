@@ -7,24 +7,15 @@
 #include "portaudio.h"
 #include "portaudio.hpp"
 #include "audio_stream.hpp"
-#include "mp3_encoder.hpp"
 #include <memory>
 #include <string>
 #include <vector>
 #include <functional>
 #include <optional>
+#include <tuple>
 
 namespace microphone {
 namespace vsdk = ::viam::sdk;
-
-struct StreamConfig {
-    PaDeviceIndex device_index;
-    int channels;
-    int sample_rate;
-    double latency = 0.0;
-    PaStreamCallback* callback = nullptr;
-    void* user_data = nullptr;
-};
 
 struct ConfigParams {
     std::string device_name;
@@ -33,15 +24,25 @@ struct ConfigParams {
     std::optional<double> latency_ms;
 };
 
-ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
+struct ActiveStreamConfig {
+    std::string device_name;
+    int sample_rate;
+    int num_channels;
+    double latency;
 
-void openStream(PaStream** stream,
-                const StreamConfig& config,
-                audio::portaudio::PortAudioInterface* pa = nullptr);
-void startStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
-PaDeviceIndex findDeviceByName(const std::string& name, audio::portaudio::PortAudioInterface* pa= nullptr);
-void shutdownStream(PaStream* stream, audio::portaudio::PortAudioInterface* pa= nullptr);
-void startPortAudio(audio::portaudio::PortAudioInterface* pa = nullptr);
+    bool operator==(const ActiveStreamConfig& other) const {
+        return std::tie(device_name, sample_rate, num_channels, latency) ==
+               std::tie(other.device_name, other.sample_rate, other.num_channels, other.latency);
+    }
+
+    bool operator!=(const ActiveStreamConfig& other) const {
+        return !(*this == other);
+    }
+};
+
+ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg);
+PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
+void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr);
 
 
 class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigurable {
@@ -55,7 +56,6 @@ public:
 
     viam::sdk::ProtoStruct do_command(const viam::sdk::ProtoStruct& command);
 
-    // Get audio stream
     void get_audio(std::string const& codec,
                    std::function<bool(vsdk::AudioIn::audio_chunk&& chunk)> const& chunk_handler,
                    double const& duration_seconds,
@@ -65,21 +65,32 @@ public:
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
+
+    // internal functions, public for testing
+    void openStream(PaStream** stream);
+    void startStream(PaStream* stream);
+    void shutdownStream(PaStream* stream);
+
+private:
     void setupStreamFromConfig(const ConfigParams& params);
 
+public:
     // Member variables
     std::string device_name_;
+    PaDeviceIndex device_index_;
     int sample_rate_;
     int num_channels_;
     double latency_;
     static vsdk::Model model;
 
-    // The mutex protects the stream and context pointer
+    // The mutex protects the stream, context, and the active streams counter
     std::mutex stream_ctx_mu_;
     PaStream* stream_;
-    std::shared_ptr<AudioStreamContext> audio_context_;  // shared_ptr allows safe reconfiguration
-    audio::portaudio::PortAudioInterface* pa_;
-    int active_streams_;  // Count of active get_audio calls
+    std::shared_ptr<AudioStreamContext> audio_context_;
+    // This is null in production and used for testing to inject the mock portaudio functions
+    const audio::portaudio::PortAudioInterface* pa_;
+    // Count of active get_audio calls
+    int active_streams_;
 };
 
 

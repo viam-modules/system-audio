@@ -8,7 +8,7 @@ from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.build import can_run
 from conan.tools.files import copy, load
 
-class orbbec(ConanFile):
+class audio(ConanFile):
     name = "viam-audio"
 
     license = "Apache-2.0"

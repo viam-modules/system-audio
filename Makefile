@@ -1,7 +1,7 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
 
-.PHONY: build lint setup appimage test conan-pkg
+.PHONY: build setup test clean
 
 build: $(BIN)
 
@@ -17,7 +17,7 @@ test: $(BIN)
 clean:
 	rm -rf build-conan/build/RelWithDebInfo module.tar.gz
 
-module.tar.gz: $(BIN) meta.json
+module.tar.gz: build meta.json
 	cp $(BIN) $(OUTPUT_NAME)
 	tar -czvf module.tar.gz \
 	    $(OUTPUT_NAME) meta.json

@@ -2,10 +2,21 @@
 #include <gmock/gmock.h>
 #include <thread>
 #include <chrono>
+#include <viam/sdk/common/instance.hpp>
 #include "audio_stream.hpp"
 
 using namespace microphone;
 using namespace viam::sdk;
+
+class AudioStreamTestEnvironment : public ::testing::Environment {
+public:
+  void SetUp() override { instance_ = std::make_unique<viam::sdk::Instance>(); }
+
+  void TearDown() override { instance_.reset(); }
+
+private:
+  std::unique_ptr<viam::sdk::Instance> instance_;
+};
 
 class AudioStreamContextTest : public ::testing::Test {
 protected:
@@ -169,6 +180,24 @@ TEST_F(AudioStreamContextTest, ReadMoreThanAvailable) {
     EXPECT_EQ(read_pos, 50);
 }
 
+TEST_F(AudioStreamContextTest, ReadSampleNotYetWritten) {
+     // Write only 50 samples
+    const int num_samples = 50;
+    for (int i = 0; i < num_samples; i++) {
+        context_->write_sample(static_cast<int16_t>(i));
+    }
+
+    // trying to read from a position that hasn't been written yet
+    std::vector<int16_t> buffer(100);
+    uint64_t read_pos = 100;
+    int samples_read = context_->read_samples(buffer.data(), 100, read_pos);
+
+    // should get 0 samples
+    EXPECT_EQ(samples_read, 0);
+    EXPECT_EQ(read_pos, 100);
+}
+
+
 TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
     // Set up the baseline time
     context_->first_sample_adc_time = 1000.0;
@@ -181,15 +210,15 @@ TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
     ).count();
 
     // Test timestamp for sample 0
-    auto timestamp1 = calculate_sample_timestamp(context_.get(), 0);
+    auto timestamp1 = calculate_sample_timestamp(*context_, 0);
     EXPECT_EQ(timestamp1.count(), baseline_ns);
 
     // Test timestamp for sample at 1 second (44100 samples at 44.1kHz)
-    auto timestamp2 = calculate_sample_timestamp(context_.get(), 44100);
+    auto timestamp2 = calculate_sample_timestamp(*context_, 44100);
     EXPECT_NEAR(timestamp2.count(), baseline_ns + 1'000'000'000, 1000);  // ~1 second
 
     // Test timestamp for sample at 0.5 seconds (22050 samples)
-    auto timestamp3 = calculate_sample_timestamp(context_.get(), 22050);
+    auto timestamp3 = calculate_sample_timestamp(*context_, 22050);
     EXPECT_NEAR(timestamp3.count(), baseline_ns + 500'000'000, 1000);  // ~0.5 seconds
 }
 
@@ -293,5 +322,6 @@ TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    ::testing::AddGlobalTestEnvironment(new AudioStreamTestEnvironment);
     return RUN_ALL_TESTS();
 }

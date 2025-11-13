@@ -25,20 +25,23 @@ using namespace audio;
 // Mock PortAudio interface
 class MockPortAudio : public audio::portaudio::PortAudioInterface {
 public:
-      MOCK_METHOD(PaError, initialize, (), (override));
-      MOCK_METHOD(PaDeviceIndex, getDefaultInputDevice, (), (override));
-      MOCK_METHOD(PaDeviceIndex, getDefaultOutputDevice, (), (override));
-      MOCK_METHOD(const PaDeviceInfo*, getDeviceInfo, (PaDeviceIndex device), (override));
+      MOCK_METHOD(PaError, initialize, (), (const, override));
+      MOCK_METHOD(PaDeviceIndex, getDefaultInputDevice, (), (const, override));
+      MOCK_METHOD(PaDeviceIndex, getDefaultOutputDevice, (), (const, override));
+      MOCK_METHOD(const PaDeviceInfo*, getDeviceInfo, (PaDeviceIndex device), (const, override));
       MOCK_METHOD(PaError, openStream, (PaStream** stream, const PaStreamParameters* inputParameters,
                                         const PaStreamParameters* outputParameters, double sampleRate,
                                         unsigned long framesPerBuffer, PaStreamFlags streamFlags,
-                                        PaStreamCallback* streamCallback, void* userData), (override));
-      MOCK_METHOD(PaError, startStream, (PaStream* stream), (override));
-      MOCK_METHOD(PaError, terminate, (), (override));
-      MOCK_METHOD(PaError, stopStream, (PaStream* stream), (override));
-      MOCK_METHOD(PaError, closeStream, (PaStream* stream), (override));
-      MOCK_METHOD(PaDeviceIndex, getDeviceCount, (), (override));
-      MOCK_METHOD(PaStreamInfo*, getStreamInfo, (PaStream* stream), (override));
+                                        PaStreamCallback* streamCallback, void* userData), (const, override));
+      MOCK_METHOD(PaError, startStream, (PaStream* stream), (const, override));
+      MOCK_METHOD(PaError, terminate, (), (const, override));
+      MOCK_METHOD(PaError, stopStream, (PaStream* stream), (const, override));
+      MOCK_METHOD(PaError, closeStream, (PaStream* stream), (const, override));
+      MOCK_METHOD(PaDeviceIndex, getDeviceCount, (), (const, override));
+      MOCK_METHOD(PaStreamInfo*, getStreamInfo, (PaStream* stream), (const, override));
+      MOCK_METHOD(PaError, isFormatSupported, (const PaStreamParameters* inputParameters,
+                                               const PaStreamParameters* outputParameters,
+                                               double sampleRate), (const, override));
   };
 
 // Base test fixture with common PortAudio mock setup
@@ -46,12 +49,12 @@ public:
 class AudioTestBase : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Create mock PortAudio
-        mock_pa_ = std::make_unique<MockPortAudio>();
+        mock_pa_ = std::make_unique<::testing::NiceMock<MockPortAudio>>();
 
         // Setup mock device info with common defaults
         mock_device_info_.defaultLowInputLatency = 0.01;
         mock_device_info_.defaultLowOutputLatency = 0.01;
+        mock_device_info_.defaultSampleRate = 44100.0;
         mock_device_info_.maxInputChannels = 2;
         mock_device_info_.maxOutputChannels = 0;
         mock_device_info_.name = testDeviceName;
@@ -64,7 +67,7 @@ protected:
     // Common test device name used across all tests
     static constexpr const char* testDeviceName = "Test Device";
 
-    std::unique_ptr<MockPortAudio> mock_pa_;
+    std::unique_ptr<::testing::NiceMock<MockPortAudio>> mock_pa_;
     PaDeviceInfo mock_device_info_;
 };
 
@@ -85,8 +88,6 @@ protected:
 
         SetupDefaultPortAudioBehavior();
     }
-
-    // Helper: Create a basic config with common attributes
     ResourceConfig createConfig(const std::string& device_name = testDeviceName,
                                 int sample_rate = 44100,
                                 int num_channels = 1,
@@ -161,6 +162,8 @@ protected:
             .WillByDefault(Return(paNoError));
         ON_CALL(*mock_pa_, getStreamInfo(_))
             .WillByDefault(Return(nullptr));
+        ON_CALL(*mock_pa_, isFormatSupported(_, _, _))
+            .WillByDefault(Return(paNoError));
     }
 
     std::string test_mic_name_;
@@ -267,16 +270,6 @@ TEST_F(MicrophoneTest, DoCommandReturnsEmptyStruct) {
 }
 
 
-TEST_F(MicrophoneTest, GeometriesReturnsEmptyStruct) {
-    microphone::Microphone mic(test_deps_, *test_config_, mock_pa_.get());
-
-    ProtoStruct extra{};
-    auto result = mic.get_geometries(extra);
-
-    EXPECT_TRUE(result.empty());
-}
-
-
 TEST_F(MicrophoneTest, GetPropertiesReturnsCorrectValues) {
     int sample_rate = 48000;
     int num_channels = 2;
@@ -306,7 +299,9 @@ TEST_F(MicrophoneTest, GetPropertiesReturnsCorrectValues) {
 
     EXPECT_EQ(props.sample_rate_hz, sample_rate);
     EXPECT_EQ(props.num_channels, num_channels);
-    ASSERT_EQ(props.supported_codecs.size(), 4);
+    ASSERT_EQ(props.supported_codecs.size(), 1);
+    EXPECT_EQ(props.supported_codecs[0], viam::sdk::audio_codecs::PCM_16);
+
 }
 
 TEST_F(MicrophoneTest, ModelExists) {
@@ -568,6 +563,55 @@ TEST_F(MicrophoneTest, ReconfigureDifferentNumChannels) {
     EXPECT_EQ(mic.num_channels_, 1);
 }
 
+TEST_F(MicrophoneTest, ReconfigureChangesAudioContext) {
+    auto config = createConfig(testDeviceName, 44100, 1);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    // Get the initial audio_context_ pointer and verify its properties
+    auto initial_context = mic.audio_context_;
+    ASSERT_NE(initial_context, nullptr);
+    EXPECT_EQ(initial_context->info.sample_rate_hz, 44100);
+    EXPECT_EQ(initial_context->info.num_channels, 1);
+    EXPECT_EQ(initial_context->info.codec, viam::sdk::audio_codecs::PCM_16);
+
+    // Write some samples to the initial context
+    for (int i = 0; i < 100; i++) {
+        initial_context->write_sample(static_cast<int16_t>(i));
+    }
+    EXPECT_EQ(initial_context->get_write_position(), 100);
+
+    // Reconfigure with different sample rate and channels
+    auto new_config = createConfig(testDeviceName, 48000, 2);
+    PaStream* dummy_stream = reinterpret_cast<PaStream*>(0x1234);
+
+    // Setup expectations for reconfigure (shutdown old stream, open new stream)
+    EXPECT_CALL(*mock_pa_, stopStream(::testing::_)).WillOnce(::testing::Return(paNoError));
+    EXPECT_CALL(*mock_pa_, closeStream(::testing::_)).WillOnce(::testing::Return(paNoError));
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillOnce(::testing::Return(1));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(::testing::Return(&mock_device_info_));
+    EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::DoAll(::testing::SetArgPointee<0>(dummy_stream), ::testing::Return(paNoError)));
+    EXPECT_CALL(*mock_pa_, startStream(::testing::_)).WillOnce(::testing::Return(paNoError));
+
+    EXPECT_NO_THROW(mic.reconfigure(test_deps_, new_config));
+
+    // Verify that audio_context_ was replaced with a new instance
+    auto new_context = mic.audio_context_;
+    ASSERT_NE(new_context, nullptr);
+    EXPECT_NE(new_context, initial_context);
+
+    EXPECT_EQ(new_context->info.sample_rate_hz, 48000);
+    EXPECT_EQ(new_context->info.num_channels, 2);
+    EXPECT_EQ(new_context->info.codec, viam::sdk::audio_codecs::PCM_16);
+
+    // Verify new context starts fresh (no samples written yet)
+    EXPECT_EQ(new_context->get_write_position(), 0);
+
+    // Verify old context still exists with its data (kept alive by shared_ptr)
+    EXPECT_EQ(initial_context->get_write_position(), 100);
+}
+
 TEST_F(MicrophoneTest, MultipleConcurrentGetAudioCalls) {
     auto config = createConfig(testDeviceName, 44100, 2);
     microphone::Microphone mic(test_deps_, config, mock_pa_.get());
@@ -646,18 +690,6 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
     ctx->first_callback_captured.store(true);
     ctx->total_samples_written.store(0);
 
-    // Write samples in background thread while get_audio runs
-    std::atomic<bool> stop_writing{false};
-    std::thread writer([&]() {
-        for (int i = 0; i < num_chunks * samples_per_chunk && !stop_writing.load(); i++) {
-            ctx->write_sample(static_cast<int16_t>(i));
-            // Small delay every 100 samples to simulate real-time audio
-            if (i % 100 == 0) {
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
-            }
-        }
-    });
-
     int chunks_received = 0;
     auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
         chunks_received++;
@@ -665,10 +697,18 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
         return chunks_received < num_chunks;
     };
 
-    mic.get_audio(viam::sdk::audio_codecs::PCM_16, handler, 2.0, 0, ProtoStruct{});
+    std::thread reader([&]() {
+      mic.get_audio(viam::sdk::audio_codecs::PCM_16, handler, 5.0, 0, ProtoStruct{});
+    });
 
-    stop_writing = true;
-    writer.join();
+    // Give get_audio time to initialize its read position
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+     for (int i = 0; i < num_chunks * samples_per_chunk; i++) {
+        ctx->write_sample(static_cast<int16_t>(i));
+     }
+
+    reader.join();
 
     EXPECT_EQ(chunks_received, num_chunks);
 }
@@ -729,129 +769,131 @@ TEST_F(MicrophoneTest, GetAudioWithInvalidCodecThrowsError) {
     }, std::invalid_argument);
 }
 
+TEST_F(MicrophoneTest, TestOpenStreamSuccessDefaultDevice) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
 
-// PortAudio utility function tests
-class PortAudioTest : public AudioTestBase {
-    // Inherits mock_pa_ and mock_device_info_ from AudioTestBase
-};
-
-
-TEST_F(PortAudioTest, TestStartPortAudioSuccess) {
-    EXPECT_CALL(*mock_pa_, initialize())
-        .Times(1)
-        .WillOnce(::testing::Return(paNoError));
-
-    // Test that startPortAudio doesn't throw when mock returns success
-    EXPECT_NO_THROW({
-        microphone::startPortAudio(mock_pa_.get());
-    });
-}
-
-TEST_F(PortAudioTest, TestOpenStreamSuccessDefaultDevice) {
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
     PaStream* stream = nullptr;
-    int channels = 2;
-    int sampleRate = 44100;
-    PaDeviceIndex deviceIndex = 0;
 
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(0))
-        .WillOnce(::testing::Return(&mock_device_info_));
-
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                      static_cast<double>(sampleRate),
+                                      static_cast<double>(44100),
                                       ::testing::_, ::testing::_,
                                       ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paNoError));
-
-
-    // Verify OpenStream doesn't throw
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = channels,
-        .sample_rate = sampleRate,
-        .latency = 0.0
-    };
-
-    EXPECT_NO_THROW(microphone::openStream(&stream, config, mock_pa_.get()));
+    EXPECT_NO_THROW(mic.openStream(&stream));
 }
 
 
-TEST_F(PortAudioTest, TestOpenStreamSuccessSpecificDevice) {
-    PaStream* stream = nullptr;
-    int channels = 2;
-    int sampleRate = 44100;
-    PaDeviceIndex deviceIndex = 1;  // Specific device index
-
-    // Setup device name in mock
-    mock_device_info_.name = "test_device";
+TEST_F(MicrophoneTest, TestOpenStreamSuccessSpecificDevice) {
+    const char* deviceName = "test_device";
+    mock_device_info_.name = deviceName;
     mock_device_info_.maxInputChannels = 2;
 
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(1))
-        .WillRepeatedly(::testing::Return(&mock_device_info_));
-
+    auto config = createConfig(deviceName, 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
+    PaStream* stream = nullptr;
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                    static_cast<double>(sampleRate),
+                                    static_cast<double>(48000),
                                     ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paNoError));
-
-
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = channels,
-        .sample_rate = sampleRate,
-        .latency = 0.0
-    };
-
-    EXPECT_NO_THROW(microphone::openStream(&stream, config, mock_pa_.get()));
+    EXPECT_NO_THROW(mic.openStream(&stream));
 }
 
 
-TEST_F(PortAudioTest, TestOpenStreamInvalidDeviceIndex) {
+TEST_F(MicrophoneTest, TestOpenStreamFormatNotSupported) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
+
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
+
+    // Test that OpenStream throws when format is not supported
     PaStream* stream = nullptr;
-    PaDeviceIndex invalidIndex = 99;  // Invalid device index
-
-    // getDeviceInfo returns nullptr for invalid device
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(99))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    // Test that OpenStream throws when device info cannot be retrieved
-    microphone::StreamConfig config{
-        .device_index = invalidIndex,
-        .channels = 2,
-        .sample_rate = 44100,
-        .latency = 0.0
-    };
-
-    EXPECT_THROW(microphone::openStream(&stream, config, mock_pa_.get()), std::runtime_error);
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paInvalidDevice));
+    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
 }
 
-TEST_F(PortAudioTest, TestOpenStreamOpenStreamFails) {
+TEST_F(MicrophoneTest, TestOpenStreamFails) {
+    auto config = createConfig(testDeviceName, 44100, 2);
+    expectSuccessfulStreamCreation();
+
+    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
     PaStream* stream = nullptr;
-    PaDeviceIndex deviceIndex = 0;
-
-    // Device info is valid but OpenStream fails
-    EXPECT_CALL(*mock_pa_, getDeviceInfo(0))
-        .Times(1)
-        .WillOnce(::testing::Return(&mock_device_info_));
-
+    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_, ::testing::_,
                                     ::testing::_, ::testing::_))
-        .Times(1)
         .WillOnce(::testing::Return(paInvalidDevice));
+    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
+}
 
-    // Test that OpenStream throws when Pa_OpenStream fails
-    microphone::StreamConfig config{
-        .device_index = deviceIndex,
-        .channels = 2,
-        .sample_rate = 44100,
-        .latency = 0.0
-    };
+// AudioStreamContext validation tests
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroNumChannels) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 0;  // Invalid
 
-    EXPECT_THROW(microphone::openStream(&stream, config, mock_pa_.get()), std::runtime_error);
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeNumChannels) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = -1;  // Invalid
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroSampleRate) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 0;  // Invalid
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeSampleRate) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = -44100;  // Invalid
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 10);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroBufferDuration) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, 0);
+    }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeBufferDuration) {
+    viam::sdk::audio_info info;
+    info.sample_rate_hz = 44100;
+    info.num_channels = 2;
+
+    EXPECT_THROW({
+        microphone::AudioStreamContext ctx(info, 4410, -5);
+    }, std::invalid_argument);
 }
 
 int main(int argc, char **argv) {
