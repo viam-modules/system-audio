@@ -115,7 +115,6 @@ uint64_t AudioStreamContext::get_write_position() const noexcept {
 }
 
 uint64_t AudioStreamContext::get_sample_number_from_timestamp(int64_t timestamp) {
-    // Check if timestamp is before stream started
     if (timestamp < 0) {
         throw std::invalid_argument("timestamp must be postive");
     }
@@ -150,7 +149,6 @@ std::chrono::nanoseconds AudioStreamContext::calculate_sample_timestamp(
         absolute_time.time_since_epoch()
     );
 }
-
 
 /**
  * PortAudio callback function - runs on real-time audio thread.

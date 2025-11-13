@@ -1000,14 +1000,13 @@ TEST_F(MicrophoneTest, GetAudioSucceedsWithValidTimestamp) {
     EXPECT_TRUE(called);
 }
 
-// Standalone tests for get_initial_read_position helper function
+
 TEST(GetInitialReadPosition, ZeroTimestampReturnsCurrentWritePosition) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
     auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
-    // Write some samples
     for (int i = 0; i < 1000; i++) {
         ctx->write_sample(static_cast<int16_t>(i));
     }
@@ -1031,14 +1030,13 @@ TEST(GetInitialReadPosition, ValidTimestampReturnsCorrectPosition) {
     // Get timestamp for 1 second into the stream
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
-    int64_t one_second_later = stream_start_timestamp_ns + 1000000000;
+    int64_t one_second_later = stream_start_timestamp_ns + microphone::NANOSECONDS_PER_SECOND;
 
     uint64_t read_pos = microphone::get_initial_read_position(ctx, one_second_later);
 
-    // Should be approximately 1 second worth of samples + 1 (since we read from next sample)
+    // Should be exactly 1 second worth of samples + 1 (since we read from next sample)
     // 1 second @ 48kHz stereo = 96000 samples, +1 for next sample = 96001
-    EXPECT_GT(read_pos, 96000);
-    EXPECT_LT(read_pos, 96100);
+    EXPECT_EQ(read_pos, 96001);
 }
 
 TEST(GetInitialReadPosition, NullContextThrows) {
@@ -1057,7 +1055,7 @@ TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
 
     // Timestamp 2 seconds before stream started
-    int64_t old_timestamp = stream_start_timestamp_ns - 2000000000;
+    int64_t old_timestamp = stream_start_timestamp_ns - 2 * microphone::NANOSECONDS_PER_SECOND;
 
     EXPECT_THROW({
         microphone::get_initial_read_position(ctx, old_timestamp);
@@ -1070,7 +1068,6 @@ TEST(GetInitialReadPosition, TimestampInFutureThrows) {
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
-    // Write 1 second of audio
     int samples_for_1_second = 48000 * 2;
     for (int i = 0; i < samples_for_1_second; i++) {
         ctx->write_sample(static_cast<int16_t>(i));
@@ -1099,7 +1096,7 @@ TEST(GetInitialReadPosition, TimestampTooOldThrows) {
         ctx->write_sample(static_cast<int16_t>(i));
     }
 
-    // Request timestamp from the very beginning (now overwritten)
+    // Request timestamp from the very beginning
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
 

@@ -162,7 +162,7 @@ void Microphone::get_audio(std::string const& codec,
     }
 
     try {
-    // Initialize read position from timestamp
+    // Initialize read position based on timestamp param
     read_position = get_initial_read_position(stream_context, previous_timestamp);
     } catch (const std::exception& e) {
         VIAM_SDK_LOG(error) << "failed to get audio: " << e.what();
@@ -547,13 +547,8 @@ uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& st
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_context->stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
 
-
-    if (previous_timestamp < stream_start_timestamp_ns) {
-        throw std::invalid_argument("Requested timestamp is before stream started");
-    }
-
-    // Convert timestamp to sample position
-    // Note: If timestamp falls between samples, rounds down then advances
+    // Convert timestamp to sample position, then advance by 1
+    // We read from the NEXT sample after the requested timestamp
     uint64_t sample_number = stream_context->get_sample_number_from_timestamp(previous_timestamp);
     uint64_t read_position = sample_number + 1;
 
@@ -564,7 +559,7 @@ uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& st
         throw std::invalid_argument("Requested timestamp is in the future - audio not yet captured");
     }
 
-    // Validate timestamp is not too old (audio has been overwritten in circular buffer
+    // Validate timestamp is not too old (audio has been overwritten)
     if (current_write_pos > read_position + stream_context->buffer_capacity) {
         std::ostringstream stream;
         stream << "Requested timestamp is too old - audio has been overwritten. "
