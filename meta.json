@@ -1,0 +1,16 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam:audio",
+  "visibility": "public",
+  "url": "https://github.com/viam-modules/audio",
+  "description": "audio module for microphones and speakers",
+  "models": [
+    {
+      "api": "rdk:component:audioin",
+      "markdown_link": "README.md#model-viamaudiomicrophone",
+      "model": "viam:audio:microphone",
+      "short_description": "captures audio from system microphones"
+    }
+  ],
+  "entrypoint": "audio-module"
+}

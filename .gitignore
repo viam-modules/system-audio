@@ -1,0 +1,8 @@
+build/
+.DS_STORE
+venv/
+CMakeUserPresets.json
+build-conan/
+module.tar.gz
+audio-module
+settings.json
