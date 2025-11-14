@@ -91,6 +91,11 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] sample_rate attribute must be a number";
             throw std::invalid_argument("sample_rate attribute must be a number");
         }
+        double sample_rate = *attrs.at("sample_rate").get<double>();
+        if (sample_rate <= 0) {
+            VIAM_SDK_LOG(error) << "[validate] sample rate must be greater than zero";
+            throw std::invalid_argument("sample rate must be greater than zero");
+        }
     }
 
     if(attrs.count("num_channels")) {
@@ -98,7 +103,14 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] num_channels attribute must be a number";
             throw std::invalid_argument("num_channels attribute must be a number");
         }
+        double num_channels = *attrs.at("num_channels").get<double>();
+        if (num_channels <= 0) {
+            VIAM_SDK_LOG(error) << "[validate] num_channels must be greater than zero";
+            throw std::invalid_argument(" num_channels must be greater than zero");
+        }
     }
+
+
 
     if(attrs.count("latency")) {
         if (!attrs["latency"].is_a<double>()) {
@@ -267,6 +279,14 @@ void Microphone::get_audio(std::string const& codec,
                     stream_sample_rate = sample_rate_;
                     stream_num_channels = num_channels_;
                     samples_per_chunk = (stream_sample_rate * CHUNK_DURATION_SECONDS) * stream_num_channels;
+
+                    // Reinitialize MP3 encoder with new config if using MP3 codec
+                    if (codec == vsdk::audio_codecs::MP3) {
+                        flush_mp3_encoder(mp3_ctx);
+                        cleanup_mp3_encoder(mp3_ctx);
+                        initialize_mp3_encoder(mp3_ctx, stream_sample_rate, stream_num_channels);
+                        VIAM_SDK_LOG(info) << "Reinitialized MP3 encoder with new config";
+                    }
                 }
                 // Switch to new context and reset read position
                 stream_context = audio_context_;
@@ -303,7 +323,7 @@ void Microphone::get_audio(std::string const& codec,
 
         // Skip sending empty chunks (can happen with MP3 due to encoder buffering)
         if (codec == vsdk::audio_codecs::MP3 && chunk.audio_data.empty()) {
-            VIAM_SDK_LOG(debug) << "Skipping empty MP3 chunk (encoder buffering)";
+            VIAM_SDK_LOG(info) << "Skipping empty MP3 chunk (encoder buffering)";
             continue;
         }
 
@@ -355,7 +375,7 @@ viam::sdk::audio_properties Microphone::get_properties(const viam::sdk::ProtoStr
 }
 
 std::vector<viam::sdk::GeometryConfig> Microphone::get_geometries(const viam::sdk::ProtoStruct& extra) {
-    return std::vector<viam::sdk::GeometryConfig>();
+    throw std::runtime_error("get_geometries is unimplemented");
 }
 
 
@@ -444,7 +464,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     int samples_per_chunk = new_sample_rate * CHUNK_DURATION_SECONDS;  // 100ms chunks
     auto new_audio_context = std::make_shared<AudioStreamContext>(info, samples_per_chunk);
 
-    // Update configuration under lock (needed before openStream since it reads these values)
+    // Set new configuration under lock (needed before openStream since it uses these)
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         device_name_ = new_device_name;
@@ -460,7 +480,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     openStream(&new_stream);
     startStream(new_stream);
 
-    // Install new stream under lock
+    // Swap in new stream under lock
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_ = new_stream;
@@ -554,9 +574,10 @@ void Microphone::openStream(PaStream** stream) {
     if (err != paNoError) {
         std::ostringstream buffer;
         buffer << "Failed to open audio stream for device '" << device_name_ << "': "
+             << "' (index " << device_index_ << "): "
                << Pa_GetErrorText(err)
                << " (sample_rate=" << sample_rate_
-               << ", channels=" << params.channelCount
+               << ", channels=" << num_channels_
                << ", latency=" << params.suggestedLatency << "s)";
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::runtime_error(buffer.str());
@@ -583,6 +604,10 @@ PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::
 
       for (PaDeviceIndex i = 0; i< deviceCount; i++) {
         const PaDeviceInfo* info = pa.getDeviceInfo(i);
+         if (!info) {
+            VIAM_SDK_LOG(warn) << "could not get device info for device index " << i << ", skipping";
+            continue;
+        }
 
         if (name == info->name) {
             // input and output devices can have the same name so check that it has input channels.

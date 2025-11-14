@@ -41,7 +41,7 @@ The microphone component supports reconfiguration - you can change stream attrib
 
 #### Important Considerations
 
-1. **Writing to fixed-format files (WAV, etc.)**
+1. **Writing to fixed-format files (WAV, MP3, etc.)**
    - WAV files have a fixed header with sample rate and channel count
    - Changing `sample_rate` or `num_channels` mid-stream will corrupt the file
    - **Solution:** Stop recording, save the file, then reconfigure and start a new file

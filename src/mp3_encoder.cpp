@@ -66,11 +66,9 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
         throw std::runtime_error("Could not allocate MP3 frame buffer");
     }
 
-    ctx.buffer.clear();
-
     VIAM_SDK_LOG(info) << "MP3 encoder initialized: " << sample_rate
                        << "Hz, " << num_channels << " channels, "
-                       << ctx.ffmpeg_ctx->frame_size << " samples/frame";
+                       << ctx.ffmpeg_ctx->frame_size << " samples";
 }
 
 void encode_mp3_samples(MP3EncoderContext& ctx,

@@ -5,7 +5,6 @@
 
 using namespace microphone;
 
-// Initialize Viam SDK instance for logging support
 class MP3EncoderTestEnvironment : public ::testing::Environment {
 public:
     void SetUp() override {
