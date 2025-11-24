@@ -37,6 +37,14 @@ function(audio_add_gtest SOURCE_FILE_NAME)
         )
     endif()
 
+    if(LINUX)
+        target_link_libraries(${TEST_EXECUTABLE_NAME} ALSA::ALSA)
+        if(JACK_FOUND)
+            target_link_libraries(${TEST_EXECUTABLE_NAME} ${JACK_LIBRARIES})
+            target_link_directories(${TEST_EXECUTABLE_NAME} ${JACK_LIBRARY_DIRS})
+        endif()
+    endif()
+
     target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE
         ${PORTAUDIO_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/src
