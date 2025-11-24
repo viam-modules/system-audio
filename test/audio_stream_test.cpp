@@ -201,7 +201,7 @@ TEST_F(AudioStreamContextTest, ReadSampleNotYetWritten) {
 TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
     // Set up the baseline time
     context_->first_sample_adc_time = 1000.0;
-    context_->stream_start_time = std::chrono::system_clock::now();
+    context_->stream_start_time = std::chrono::steady_clock::now();
     context_->first_callback_captured.store(true);
     context_->total_samples_written.store(0);
 
@@ -210,15 +210,15 @@ TEST_F(AudioStreamContextTest, CalculateSampleTimestamp) {
     ).count();
 
     // Test timestamp for sample 0
-    auto timestamp1 = calculate_sample_timestamp(*context_, 0);
+    auto timestamp1 = context_->calculate_sample_timestamp(0);
     EXPECT_EQ(timestamp1.count(), baseline_ns);
 
     // Test timestamp for sample at 1 second (44100 samples at 44.1kHz)
-    auto timestamp2 = calculate_sample_timestamp(*context_, 44100);
+    auto timestamp2 = context_->calculate_sample_timestamp(44100);
     EXPECT_NEAR(timestamp2.count(), baseline_ns + 1'000'000'000, 1000);  // ~1 second
 
     // Test timestamp for sample at 0.5 seconds (22050 samples)
-    auto timestamp3 = calculate_sample_timestamp(*context_, 22050);
+    auto timestamp3 =  context_->calculate_sample_timestamp(22050);
     EXPECT_NEAR(timestamp3.count(), baseline_ns + 500'000'000, 1000);  // ~0.5 seconds
 }
 

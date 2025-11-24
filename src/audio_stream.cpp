@@ -112,6 +112,33 @@ uint64_t AudioStreamContext::get_write_position() const noexcept {
     return total_samples_written.load(std::memory_order_acquire);
 }
 
+uint64_t AudioStreamContext::get_sample_number_from_timestamp(int64_t timestamp) noexcept{
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+
+    int64_t elapsed_time_ns = timestamp - stream_start_timestamp_ns;
+    double elapsed_seconds = static_cast<double>(elapsed_time_ns) / NANOSECONDS_PER_SECOND;
+    uint64_t sample_number = static_cast<uint64_t>(
+        elapsed_seconds * info.sample_rate_hz * info.num_channels
+    );
+    return sample_number;
+}
+
+std::chrono::nanoseconds AudioStreamContext::calculate_sample_timestamp(
+    uint64_t sample_number) noexcept
+{
+     // Convert sample_number to frame number (samples include all channels)
+    uint64_t frame_number = sample_number / info.num_channels;
+    uint64_t elapsed_ns = (frame_number * NANOSECONDS_PER_SECOND) / info.sample_rate_hz;
+
+    auto elapsed_duration = std::chrono::nanoseconds(elapsed_ns);
+    auto absolute_time = stream_start_time + elapsed_duration;
+
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        absolute_time.time_since_epoch()
+    );
+}
+
 /**
  * PortAudio callback function - runs on real-time audio thread.
  *  This function must not:
@@ -151,7 +178,7 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
         // first sample of the input buffer was captured,
         // synced with the clock of the device
         ctx->first_sample_adc_time = timeInfo->inputBufferAdcTime;
-        ctx->stream_start_time = std::chrono::system_clock::now();
+        ctx->stream_start_time = std::chrono::steady_clock::now();
         ctx->first_callback_captured.store(true);
     }
 

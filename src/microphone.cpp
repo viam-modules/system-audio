@@ -145,7 +145,6 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             throw std::invalid_argument(" num_channels must be greater than zero");
         }
     }
-
     if(attrs.count("latency")) {
         if (!attrs["latency"].is_a<double>()) {
             VIAM_SDK_LOG(error) << "[validate] latency attribute must be a number";
@@ -197,8 +196,6 @@ void Microphone::get_audio(std::string const& codec,
                            int64_t const& previous_timestamp,
                            const viam::sdk::ProtoStruct& extra) {
 
-    //TODO: get audio starting from prev timestamp
-
     std::string requested_codec = toLower(codec);
 
     // Validate codec is supported
@@ -227,19 +224,20 @@ void Microphone::get_audio(std::string const& codec,
     std::shared_ptr<AudioStreamContext> stream_context;
     uint64_t read_position = 0;
 
-    // Initialize read position to current write position to get most recent audio
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         if (!audio_context_) {
             VIAM_SDK_LOG(error) << "Audio stream not initialized - audio_context_ is null";
             throw std::runtime_error("Audio stream not initialized");
         }
-        read_position = audio_context_->get_write_position();
         stream_context = audio_context_;
     }
 
+    // Initialize read position based on timestamp param
+    read_position = get_initial_read_position(stream_context, previous_timestamp);
+
     // Get sample rate and channels - will be updated if context changes
-    int stream_sample_rate= 0;
+    int stream_sample_rate = 0;
     int stream_num_channels = 0;
 
     {
@@ -353,8 +351,8 @@ void Microphone::get_audio(std::string const& codec,
             chunk_end_position -= delay_samples;
         }
 
-        chunk.start_timestamp_ns = calculate_sample_timestamp(*stream_context, chunk_start_position);
-        chunk.end_timestamp_ns = calculate_sample_timestamp(*stream_context, chunk_end_position);
+        chunk.start_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position);
+        chunk.end_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_end_position);
 
         last_chunk_end_position = chunk_end_position;
 
@@ -400,15 +398,20 @@ void Microphone::get_audio(std::string const& codec,
                               << " timestamp_end=" << timestamp_end
                               << " flush_duration_samples=" << (timestamp_end - timestamp_start);
 
-            final_chunk.start_timestamp_ns = calculate_sample_timestamp(*stream_context, timestamp_start);
-            final_chunk.end_timestamp_ns = calculate_sample_timestamp(*stream_context, timestamp_end);
+            final_chunk.start_timestamp_ns = stream_context->calculate_sample_timestamp(timestamp_start);
+            final_chunk.end_timestamp_ns = stream_context->calculate_sample_timestamp(timestamp_end);
 
             chunk_handler(std::move(final_chunk));
             VIAM_SDK_LOG(debug) << "Sent final MP3 flush chunk with " << final_data_size << " bytes";
         }
     }
 
-    VIAM_SDK_LOG(info) << "get_audio stream completed";
+    VIAM_SDK_LOG(debug) << "get_audio stream completed";
+
+    {
+        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+        active_streams_--;
+    }
 }
 
 viam::sdk::audio_properties Microphone::get_properties(const viam::sdk::ProtoStruct& extra){
@@ -665,6 +668,68 @@ void Microphone::startStream(PaStream* stream) {
         VIAM_SDK_LOG(error) << "Failed to start audio stream: " << Pa_GetErrorText(err);
         throw std::runtime_error(std::string("Failed to start audio stream: ") + Pa_GetErrorText(err));
     }
+}
+
+uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& stream_context,
+                                    int64_t previous_timestamp) {
+    if (!stream_context) {
+        throw std::invalid_argument("stream_context is null");
+    }
+
+    // default: start from current write position (most recent audio)
+    if (previous_timestamp == 0) {
+        return stream_context->get_write_position();
+    }
+
+    // Validate timestamp is non-negative
+    if (previous_timestamp < 0) {
+        std::ostringstream buffer;
+        buffer << "Invalid previous_timestamp: " << previous_timestamp
+                           << " (must be non-negative)";
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::invalid_argument(buffer.str());;
+    }
+
+    // Validate timestamp is not before stream started
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_context->stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+    if (previous_timestamp < stream_start_timestamp_ns) {
+        std::ostringstream buffer;
+        buffer << "Requested timestamp is before stream started: stream started at "
+         << stream_start_timestamp_ns <<
+        " requested: " << previous_timestamp;
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::invalid_argument(buffer.str());
+    }
+
+    // Convert timestamp to sample position, then advance by 1
+    // We read from the NEXT sample after the requested timestamp
+    uint64_t sample_number = stream_context->get_sample_number_from_timestamp(previous_timestamp);
+    uint64_t read_position = sample_number + 1;
+
+    // Validate timestamp is not in the future
+    uint64_t current_write_pos = stream_context->get_write_position();
+    if (read_position > current_write_pos) {
+        // Calculate what the current time would be based on samples written
+        auto latest_timestamp = stream_context->calculate_sample_timestamp(current_write_pos);
+        std::ostringstream buffer;
+        buffer << "requested timestamp " << previous_timestamp
+               << " is in the future (latest available: " << latest_timestamp.count()
+               << "): audio not yet captured";
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::invalid_argument(buffer.str());
+    }
+
+    // Validate timestamp is not too old (audio has been overwritten)
+    if (current_write_pos > read_position + stream_context->buffer_capacity) {
+        std::ostringstream buffer;
+        buffer << "requested timestamp is too old - audio has been overwritten. "
+               << "Buffer only holds " << BUFFER_DURATION_SECONDS << " seconds of audio history.";
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::invalid_argument(buffer.str());
+    }
+
+    return read_position;
 }
 
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa) {
