@@ -111,7 +111,6 @@ protected:
     // Helper: Setup mock expectations for successful stream creation
     void expectSuccessfulStreamCreation(PaStream* stream_ptr = reinterpret_cast<PaStream*>(0x1234),
                                        int device_index = 0) {
-        EXPECT_CALL(*mock_pa_, getDeviceCount()).WillOnce(::testing::Return(device_index + 1));
         EXPECT_CALL(*mock_pa_, getDeviceInfo(device_index)).WillRepeatedly(::testing::Return(&mock_device_info_));
         EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
             .WillOnce(::testing::DoAll(::testing::SetArgPointee<0>(stream_ptr), ::testing::Return(paNoError)));
@@ -1103,6 +1102,49 @@ TEST(GetInitialReadPosition, TimestampTooOldThrows) {
     EXPECT_THROW({
         microphone::get_initial_read_position(ctx, stream_start_timestamp_ns);
     }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, HistoricalDataRespectsDuration) {
+    auto config = createConfig("", 48000, 2);
+    expectSuccessfulStreamCreation();
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    int samples_for_20_seconds = 48000 * 2 * 20;
+    auto ctx = createTestContext(mic, samples_for_20_seconds);
+
+    // Calculate a previous timestamp pointing to 5 seconds into the stream
+    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
+    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+    int64_t previous_timestamp_ns = stream_start_timestamp_ns + (5 *  microphone::NANOSECONDS_PER_SECOND); // 5 seconds into stream
+
+    // Request exactly 10 seconds of audio starting from second 5 (will get seconds 5-15)
+    int chunk_count = 0;
+    int total_samples_received = 0;
+    int64_t first_chunk_start_ns = 0;
+    int64_t last_chunk_end_ns = 0;
+
+    auto chunk_handler = [&](viam::sdk::AudioIn::audio_chunk chunk) -> bool {
+        chunk_count++;
+        total_samples_received += chunk.audio_data.size() / sizeof(int16_t);
+
+        if (chunk_count == 1) {
+            first_chunk_start_ns = chunk.start_timestamp_ns.count();
+        }
+        last_chunk_end_ns = chunk.end_timestamp_ns.count();
+
+        return true;
+    };
+
+    mic.get_audio("pcm16",chunk_handler, 10.0, previous_timestamp_ns, ProtoStruct{});
+
+    // Verify we got 10 seconds of audio
+    int expected_samples = 48000 * 2 * 10;
+    EXPECT_EQ(total_samples_received, expected_samples);
+
+    // Verify the duration based on timestamps
+    double duration_seconds = static_cast<double>(last_chunk_end_ns - first_chunk_start_ns) / 1e9;
+    EXPECT_EQ(duration_seconds, 10.0);
+    EXPECT_EQ(chunk_count, 100);
 }
 
 int main(int argc, char **argv) {

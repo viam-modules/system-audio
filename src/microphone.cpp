@@ -139,10 +139,10 @@ void Microphone::get_audio(std::string const& codec,
         throw std::invalid_argument(buffer.str());
     }
 
-    // Set duration timer
-    auto start_time = std::chrono::steady_clock::time_point();
-    auto end_time = std::chrono::steady_clock::time_point::max();
-    bool timer_started = false;
+    // Track audio duration (in samples)
+    uint64_t first_chunk_start_position = 0;
+    uint64_t total_samples_to_read = 0;
+    bool duration_limit_set = false;
 
     uint64_t sequence = 0;
 
@@ -182,7 +182,7 @@ void Microphone::get_audio(std::string const& codec,
         throw std::runtime_error(buffer.str());
     }
 
-    while (std::chrono::steady_clock::now() < end_time) {
+    while (true) {
         // Check if audio_context_ changed (device reconfigured)
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
@@ -238,11 +238,28 @@ void Microphone::get_audio(std::string const& codec,
         chunk.start_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position);
         chunk.end_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position + samples_read);
 
-        // Start duration timer after first chunk arrives
-        if (!timer_started && duration_seconds > 0) {
-            start_time = std::chrono::steady_clock::now();
-            end_time = start_time + std::chrono::milliseconds(static_cast<int64_t>(duration_seconds * 1000));
-            timer_started = true;
+        // Set audio duration limit after first chunk
+        if (!duration_limit_set && duration_seconds > 0) {
+            first_chunk_start_position = chunk_start_position;
+            total_samples_to_read = static_cast<uint64_t>(
+                duration_seconds * stream_sample_rate * stream_num_channels
+            );
+            duration_limit_set = true;
+            VIAM_SDK_LOG(debug) << "Audio duration limit set: will read " << total_samples_to_read
+                               << " samples (" << duration_seconds << " seconds) starting from position "
+                               << first_chunk_start_position;
+        }
+
+        // Check if we've read enough audio
+        if (duration_limit_set) {
+            uint64_t total_samples_read = chunk_start_position + samples_read - first_chunk_start_position;
+            if (total_samples_read >= total_samples_to_read) {
+                VIAM_SDK_LOG(debug) << "Reached audio duration limit: read " << total_samples_read
+                                   << " samples, limit was " << total_samples_to_read;
+                // Send final chunk before exiting
+                chunk_handler(std::move(chunk));
+                break;
+            }
         }
 
         if (!chunk_handler(std::move(chunk))) {
@@ -253,6 +270,18 @@ void Microphone::get_audio(std::string const& codec,
                 active_streams_--;
             }
             return;
+        }
+
+        // Check if we're reading historical data (far behind write position)
+        if (previous_timestamp != 0 && duration_limit_set) {
+            uint64_t current_write_pos = stream_context->get_write_position();
+            uint64_t distance_behind = current_write_pos - read_position;
+            // If we're more than 1 second behind, we're reading historical data
+            uint64_t one_second_samples = stream_sample_rate * stream_num_channels;
+            if (distance_behind > one_second_samples) {
+                // Throttle historical data to give clients time to process
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
         }
     }
 
