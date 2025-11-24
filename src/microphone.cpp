@@ -196,6 +196,8 @@ void Microphone::get_audio(std::string const& codec,
                            int64_t const& previous_timestamp,
                            const viam::sdk::ProtoStruct& extra) {
 
+    VIAM_SDK_LOG(debug) << "get_audio called";
+
     std::string requested_codec = toLower(codec);
 
     // Validate codec is supported
@@ -217,6 +219,11 @@ void Microphone::get_audio(std::string const& codec,
     auto start_time = std::chrono::steady_clock::time_point();
     auto end_time = std::chrono::steady_clock::time_point::max();
     bool timer_started = false;
+
+    // Track audio duration (in samples) in addition to wall-clock time
+    uint64_t first_chunk_start_position = 0;
+    uint64_t total_samples_to_read = 0;
+    bool duration_limit_set = false;
 
     uint64_t sequence = 0;
 
@@ -336,7 +343,6 @@ void Microphone::get_audio(std::string const& codec,
         chunk.sequence_number = sequence++;
 
         // Calculate timestamps based on sample position in stream
-
         uint64_t chunk_end_position = chunk_start_position + samples_read;
         if (requested_codec == vsdk::audio_codecs::MP3 && mp3_ctx.encoder) {
             // Aadjust for encoder delay since decoded output will be shifted
