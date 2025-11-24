@@ -12,7 +12,7 @@ namespace microphone {
 
 namespace vsdk = ::viam::sdk;
 
-constexpr int BUFFER_DURATION_SECONDS = 10;  // How much audio history to keep in buffer
+constexpr int BUFFER_DURATION_SECONDS = 30;  // How much audio history to keep in buffer
 constexpr double CHUNK_DURATION_SECONDS = 0.1;   // 100ms chunks (10 chunks per second)
 constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
 
@@ -27,7 +27,7 @@ struct AudioStreamContext {
     vsdk::audio_info info;
     int samples_per_chunk;
 
-    std::chrono::system_clock::time_point stream_start_time;
+    std::chrono::steady_clock::time_point stream_start_time;
     double first_sample_adc_time;
     std::atomic<bool> first_callback_captured;
 
@@ -44,12 +44,10 @@ struct AudioStreamContext {
     int read_samples(int16_t* buffer, int sample_count, uint64_t& position) noexcept;
 
     uint64_t get_write_position() const noexcept;
-
+    std::chrono::nanoseconds calculate_sample_timestamp(uint64_t sample_number) noexcept;
+    uint64_t get_sample_number_from_timestamp(int64_t timestamp) noexcept;
 };
 
-std::chrono::nanoseconds calculate_sample_timestamp(
-    const AudioStreamContext& ctx,
-    uint64_t sample_number);
 
 /**
  * PortAudio callback function - runs on real-time audio thread.

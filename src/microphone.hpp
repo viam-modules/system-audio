@@ -45,6 +45,18 @@ PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::
 void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr);
 
 
+// Calculates the initial read position from a previous timestamp
+// Validates the timestamp and throws std::invalid_argument if:
+//   - stream_context is null
+//   - previous_timestamp < 0 (negative)
+//   - previous_timestamp is before stream started
+//   - previous_timestamp is in the future (audio not yet captured)
+//   - previous_timestamp is too old (audio has been overwritten in circular buffer)
+// Returns the write position if previous_timestamp == 0 (default: most recent audio)
+uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& stream_context,
+                                    int64_t previous_timestamp);
+
+
 class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigurable {
 public:
     Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg,
