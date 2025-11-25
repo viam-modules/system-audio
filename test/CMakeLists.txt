@@ -21,7 +21,7 @@ function(audio_add_gtest SOURCE_FILE_NAME)
         GTest::gtest_main
         GTest::gmock
         viam-cpp-sdk::viamsdk
-        ${PORTAUDIO_STATIC_LIB}
+        ${PORTAUDIO_LIBRARIES}
     )
 
     target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE
