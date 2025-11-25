@@ -139,9 +139,8 @@ void Microphone::get_audio(std::string const& codec,
         throw std::invalid_argument(buffer.str());
     }
 
-    // Track audio duration (in samples)
-    uint64_t first_chunk_start_position = 0;
-    uint64_t total_samples_to_read = 0;
+    // Track audio duration using timestamps
+    int64_t first_chunk_start_timestamp_ns = 0;
     bool duration_limit_set = false;
 
     uint64_t sequence = 0;
@@ -238,24 +237,21 @@ void Microphone::get_audio(std::string const& codec,
         chunk.start_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position);
         chunk.end_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position + samples_read);
 
-        // Set audio duration limit after first chunk
+        // Set audio duration limit after first chunk (save the starting timestamp)
         if (!duration_limit_set && duration_seconds > 0) {
-            first_chunk_start_position = chunk_start_position;
-            total_samples_to_read = static_cast<uint64_t>(
-                duration_seconds * stream_sample_rate * stream_num_channels
-            );
+            first_chunk_start_timestamp_ns = chunk.start_timestamp_ns.count();
             duration_limit_set = true;
-            VIAM_SDK_LOG(debug) << "Audio duration limit set: will read " << total_samples_to_read
-                               << " samples (" << duration_seconds << " seconds) starting from position "
-                               << first_chunk_start_position;
+            VIAM_SDK_LOG(debug) << "Audio duration limit set: will read " << duration_seconds
+                               << " seconds starting from timestamp " << first_chunk_start_timestamp_ns;
         }
 
         // Check if we've read enough audio
-        if (duration_limit_set) {
-            uint64_t total_samples_read = chunk_start_position + samples_read - first_chunk_start_position;
-            if (total_samples_read >= total_samples_to_read) {
-                VIAM_SDK_LOG(debug) << "Reached audio duration limit: read " << total_samples_read
-                                   << " samples, limit was " << total_samples_to_read;
+            int64_t time_elapsed_ns = chunk.end_timestamp_ns.count() - first_chunk_start_timestamp_ns;
+            double time_elapsed_seconds = time_elapsed_ns / 1e9;
+
+            if (time_elapsed_seconds >= duration_seconds) {
+                VIAM_SDK_LOG(debug) << "Reached audio duration limit: read " << time_elapsed_seconds
+                                   << "s, limit was " << duration_seconds << "s";
                 // Send final chunk before exiting
                 chunk_handler(std::move(chunk));
                 break;
