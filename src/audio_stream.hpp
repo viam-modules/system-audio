@@ -14,8 +14,8 @@ namespace vsdk = ::viam::sdk;
 
 constexpr int BUFFER_DURATION_SECONDS = 30;  // How much audio history to keep in buffer
 constexpr double CHUNK_DURATION_SECONDS = 0.1;   // 100ms chunks (10 chunks per second)
-constexpr int MP3_FRAME_SIZE = 1152;  // Standard MP3 frame size (samples per channel)
 constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
+constexpr float INT16_TO_FLOAT_SCALE = 1.0f / 32768.0f;  // Scale factor for converting int16 samples to float [-1.0, 1.0]
 
 // AudioStreamContext managers a circular buffer of audio for a single
 // stream.
@@ -50,7 +50,8 @@ struct AudioStreamContext {
 
 // Calculate chunk size aligned to MP3 frame boundaries
 // Returns the number of samples (including all channels) for an optimal chunk size
-int calculate_aligned_chunk_size(int sample_rate, int num_channels);
+// mp3_frame_size should be the actual frame size from LAME (1152 or 576), defaults to 1152
+int calculate_aligned_chunk_size(int sample_rate, int num_channels, int mp3_frame_size = 1152);
 
 /**
  * PortAudio callback function - runs on real-time audio thread.

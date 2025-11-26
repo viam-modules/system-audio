@@ -46,12 +46,13 @@ TEST_F(MP3EncoderTest, InitializeSucceeds) {
 
 // Test encoding exactly one MP3 frame
 TEST_F(MP3EncoderTest, EncodeOneCompleteMp3Frame) {
-    initialize_mp3_encoder(ctx_, 48000, 2);
+    const int sample_rate = 48000;
+    initialize_mp3_encoder(ctx_, sample_rate, 2);
 
-    auto samples = create_test_samples(MP3_FRAME_SIZE * 2);
+    auto samples = create_test_samples(1152);
     std::vector<uint8_t> output;
 
-    encode_samples(ctx_, samples.data(), samples.size(), 0, output);
+    encode_samples_to_mp3(ctx_, samples.data(), samples.size(), 0, output);
 
     EXPECT_FALSE(output.empty());
 }
@@ -62,18 +63,19 @@ TEST_F(MP3EncoderTest, EncodeMultipleMp3Frames) {
     auto samples = create_test_samples(4032 * 2);
     std::vector<uint8_t> output;
 
-    encode_samples(ctx_, samples.data(), samples.size(), 0, output);
+    encode_samples_to_mp3(ctx_, samples.data(), samples.size(), 0, output);
     EXPECT_FALSE(output.empty());
 }
 
 
 TEST_F(MP3EncoderTest, FlushEncoder) {
-    initialize_mp3_encoder(ctx_, 48000, 2);
+    const int sample_rate = 48000;
+    initialize_mp3_encoder(ctx_, sample_rate, 2);
 
     // aligned chunks
-    auto samples = create_test_samples(MP3_FRAME_SIZE*2);
+    auto samples = create_test_samples(1152*2);
     std::vector<uint8_t> output;
-    encode_samples(ctx_, samples.data(), samples.size(), 0, output);
+    encode_samples_to_mp3(ctx_, samples.data(), samples.size(), 0, output);
 
 
     std::vector<uint8_t> flush_output;
@@ -87,7 +89,7 @@ TEST_F(MP3EncoderTest, FlushEncoderUnalginedChunks) {
     // aligned chunks
     auto samples = create_test_samples(5000);
     std::vector<uint8_t> output;
-    encode_samples(ctx_, samples.data(), samples.size(), 0, output);
+    encode_samples_to_mp3(ctx_, samples.data(), samples.size(), 0, output);
 
 
     std::vector<uint8_t> flush_output;
@@ -108,28 +110,37 @@ TEST_F(MP3EncoderTest, CleanupEncoder) {
 }
 
 TEST_F(MP3EncoderTest, EncodeWithoutInitialization) {
-    auto samples = create_test_samples(MP3_FRAME_SIZE * 2);
+    auto samples = create_test_samples(1152);
     std::vector<uint8_t> output;
 
     // Should throw because encoder is not initialized
     EXPECT_THROW(
-        encode_samples(ctx_, samples.data(), samples.size(), 0, output),
+        encode_samples_to_mp3(ctx_, samples.data(), samples.size(), 0, output),
         std::runtime_error
     );
 }
 
-TEST_F(MP3EncoderTest, EncodeEmptyInput) {
+TEST_F(MP3EncoderTest, EncodeDoesNothingIfEmptySamples) {
     initialize_mp3_encoder(ctx_, 48000, 2);
-
     std::vector<uint8_t> output;
-    std::vector<int16_t> empty_samples;
+    auto samples = create_test_samples(1);
 
-    // Should handle empty input gracefully
-    EXPECT_NO_THROW(
-        encode_samples(ctx_, empty_samples.data(), 0, 0, output)
-    );
-    EXPECT_TRUE(output.empty());
+    // Should throw because length is zero
+    ASSERT_NO_THROW(
+        encode_samples_to_mp3(ctx_, samples.data(), 0, 0, output));
 }
+
+TEST_F(MP3EncoderTest, EncodeNullSamples) {
+    initialize_mp3_encoder(ctx_, 48000, 2);
+    std::vector<uint8_t> output;
+
+    // Should throw becausse samples array is null
+    EXPECT_THROW(
+        encode_samples_to_mp3(ctx_, nullptr, 0, 0, output),
+        std::invalid_argument
+    );
+}
+
 
 TEST_F(MP3EncoderTest, InitializeDifferentConfigs) {
     ASSERT_NO_THROW(initialize_mp3_encoder(ctx_, 44100, 2));

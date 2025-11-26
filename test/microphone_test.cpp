@@ -1220,7 +1220,7 @@ TEST_F(MicrophoneTest, CodecConversion_PCM32Float) {
     EXPECT_EQ(chunks_received, num_chunks);
     ASSERT_EQ(received_samples.size(), samples_per_chunk*num_chunks);
     for (int i = 0; i < 10; i++) {
-        float expected = static_cast<float>(static_cast<int16_t>(i)) / 32768.0f;
+        float expected = static_cast<float>(static_cast<int16_t>(i)) * microphone::INT16_TO_FLOAT_SCALE;
         EXPECT_FLOAT_EQ(received_samples[i], expected);
     }
 }

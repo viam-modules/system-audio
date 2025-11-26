@@ -207,8 +207,7 @@ std::chrono::nanoseconds calculate_sample_timestamp(
     );
 }
 
-int calculate_aligned_chunk_size(int sample_rate, int num_channels) {
-    // MP3 frames are 1152 samples per channel
+int calculate_aligned_chunk_size(int sample_rate, int num_channels, int mp3_frame_size) {
     // Calculate how many frames fit into approximately 100-200ms
     // Target: around 150ms for reasonable latency
 
@@ -216,7 +215,7 @@ int calculate_aligned_chunk_size(int sample_rate, int num_channels) {
     double samples_per_channel_target = sample_rate * target_duration_seconds;
 
     // Round to nearest number of MP3 frames
-    int num_frames = static_cast<int>(samples_per_channel_target / MP3_FRAME_SIZE + 0.5);
+    int num_frames = static_cast<int>(samples_per_channel_target / mp3_frame_size + 0.5);
 
     // Ensure at least 1 frame
     if (num_frames < 1) {
@@ -224,12 +223,12 @@ int calculate_aligned_chunk_size(int sample_rate, int num_channels) {
     }
 
     // Calculate total samples including all channels
-    int samples_per_channel = num_frames * MP3_FRAME_SIZE;
+    int samples_per_channel = num_frames * mp3_frame_size;
     int total_samples = samples_per_channel * num_channels;
 
     double actual_duration = static_cast<double>(samples_per_channel) / sample_rate;
-    VIAM_SDK_LOG(info) << "Calculated aligned chunk size: " << total_samples
-                       << " samples (" << num_frames << " MP3 frames, "
+    VIAM_SDK_LOG(debug) << "Calculated aligned chunk size: " << total_samples
+                       << " samples (" << num_frames << " MP3 frames of " << mp3_frame_size << " samples, "
                        << actual_duration * 1000.0 << "ms, "
                        << sample_rate << "Hz, " << num_channels << " channels)";
 

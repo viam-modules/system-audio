@@ -5,7 +5,7 @@
 namespace microphone {
 
 // Helper function to convert LAME error codes to readable strings
-static const char* lame_error_to_string(int error_code) {
+static const char* mp3lame_error_to_string(int error_code) {
     switch (error_code) {
         case LAME_GENERICERROR:
             return "LAME generic error";
@@ -29,7 +29,7 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
     CleanupPtr<lame_close> lame(lame_init());
     if (!lame) {
         VIAM_SDK_LOG(error) << "Failed to initialize MP3 encoder";
-        throw std::runtime_error("Failed to initialize MP3 encodor");
+        throw std::runtime_error("Failed to initialize MP3 encoder");
     }
 
     ctx.encoder = std::move(lame);
@@ -48,7 +48,7 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
     int init_result = lame_init_params(ctx.encoder.get());
     if (init_result < 0) {
         VIAM_SDK_LOG(error) << "Failed to initialize MP3 encoder parameters: "
-                            << lame_error_to_string(init_result) << " (code: " << init_result << ")";
+                            << mp3lame_error_to_string(init_result) << " (code: " << init_result << ")";
         throw std::runtime_error("Failed to initialize MP3 encoder parameters");
     }
 
@@ -56,23 +56,35 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
     // buffers
     ctx.encoder_delay = lame_get_encoder_delay(ctx.encoder.get());
 
-    VIAM_SDK_LOG(info) << "MP3 encoder initialized: " << sample_rate
+    // Get the actual frame size LAME is using
+    ctx.frame_size = lame_get_framesize(ctx.encoder.get());
+
+
+    VIAM_SDK_LOG(debug) << "MP3 encoder initialized: " << sample_rate
                        << "Hz, " << num_channels << " channels, 192kbps CBR, encoder delay: "
-                       << ctx.encoder_delay << " samples";
+                       << ctx.encoder_delay << " samples, "
+                       <<  " frame size: " << ctx.frame_size << " samples/frame)";
 }
 
-void encode_samples(MP3EncoderContext& ctx,
+void encode_samples_to_mp3(MP3EncoderContext& ctx,
                                const int16_t* samples,
                                int sample_count,
                                uint64_t chunk_start_position,
                                std::vector<uint8_t>& output_data) {
     if (!ctx.encoder) {
-        VIAM_SDK_LOG(error) << "MP3 encoder not initialized";
-        throw std::runtime_error("MP3 encoder not initialized");
+        VIAM_SDK_LOG(error) << "encode_samples_to_mp3: MP3 encoder not initialized";
+        throw std::runtime_error("encode_samples_to_mp3: MP3 encoder not initialized");
     }
 
-    // With aligned chunks, sample_count should always be a multiple of MP3 frame size
-    std::vector<int16_t> left_samples, right_samples;
+    if (samples == nullptr) {
+        VIAM_SDK_LOG(error) << "encode_samples_to_mp3: samples pointer is null";
+        throw std::invalid_argument("encode_samples_to_mp3: samples cannot be null");
+    }
+
+    if (sample_count <= 0) {
+      VIAM_SDK_LOG(debug) << "encode_samples_to_mp3: no samples to encode (count=" << sample_count << ")";
+      return;
+    }
 
     // Default to mono
     const int16_t* left_channel = samples;
@@ -82,10 +94,10 @@ void encode_samples(MP3EncoderContext& ctx,
     if (ctx.num_channels == 2) {
         // Stereo: deinterleave samples into separate left/right buffers
         std::vector<int16_t> interleaved(samples, samples + sample_count);
-        deinterleave_samples(interleaved, left_samples, right_samples);
-        left_channel = left_samples.data();
-        right_channel = right_samples.data();
-        num_samples_per_channel = static_cast<int>(left_samples.size());
+        deinterleave_samples(interleaved, ctx.left_samples, ctx.right_samples);
+        left_channel = ctx.left_samples.data();
+        right_channel = ctx.right_samples.data();
+        num_samples_per_channel = static_cast<int>(ctx.left_samples.size());
     }
 
     // Allocate output buffer: largest size is 1.25 * num_samples + 7200 (from LAME docs)
@@ -104,7 +116,7 @@ void encode_samples(MP3EncoderContext& ctx,
 
     if (bytes_written < 0) {
         VIAM_SDK_LOG(error) << "LAME encoding error: "
-                            << lame_error_to_string(bytes_written) << " (code: " << bytes_written << ")";
+                            << mp3lame_error_to_string(bytes_written) << " (code: " << bytes_written << ")";
         throw std::runtime_error("LAME encoding error");
     }
 
@@ -123,7 +135,7 @@ void flush_mp3_encoder(MP3EncoderContext& ctx, std::vector<uint8_t>& output_data
     int flushed_bytes = lame_encode_flush(ctx.encoder.get(), mp3_buffer.data(), mp3_buffer.size());
     if (flushed_bytes < 0) {
         VIAM_SDK_LOG(error) << "LAME flush error: "
-                            << lame_error_to_string(flushed_bytes) << " (code: " << flushed_bytes << ")";
+                            << mp3lame_error_to_string(flushed_bytes) << " (code: " << flushed_bytes << ")";
         throw std::runtime_error("LAME encoding error during final flush");
     } else if (flushed_bytes > 0) {
         VIAM_SDK_LOG(debug) << "MP3 encoder flushed " << flushed_bytes << " bytes from internal lookahead buffer";
