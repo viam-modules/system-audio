@@ -4,21 +4,37 @@
 
 namespace microphone {
 
-// Helper function to convert LAME error codes to readable strings
-static const char* mp3lame_error_to_string(int error_code) {
+// Helper function to convert MP3LAME initialization error codes to readable strings
+static const char* mp3lame_init_error_to_string(int error_code) {
     switch (error_code) {
         case LAME_GENERICERROR:
-            return "LAME generic error";
+            return "MP3LAME: generic error";
         case LAME_NOMEM:
-            return "LAME no memory error: out of memory";
+            return "MP3LAME: no memory error: out of memory";
         case LAME_BADBITRATE:
-            return "invalid bit rate";
+            return "MP3LAME: invalid bit rate";
         case LAME_BADSAMPFREQ:
-            return "invalid sample rate";
+            return "MP3LAME: invalid sample rate";
         case LAME_INTERNALERROR:
-            return "LAME internal error";
+            return "MP3LAME internal error";
         default:
-            return "Unknown LAME error";
+            return "Unknown MP3LAME initialization error";
+    }
+}
+
+// Helper function to convert MP3LAME encoding error codes to readable strings
+static const char* mp3lame_encode_error_to_string(int error_code) {
+    switch (error_code) {
+        case -1:
+            return "MP3LAME: mp3buf is too small";
+        case -2:
+            return "MP3LAME: malloc() problem";
+        case -3:
+            return "MP3LAME: lame_init_params() not called";
+        case -4:
+            return "MP3LAME: psycho acoustic problems";
+        default:
+            return "Unknown MP3LAME encoding error";
     }
 }
 
@@ -48,7 +64,7 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
     int init_result = lame_init_params(ctx.encoder.get());
     if (init_result < 0) {
         VIAM_SDK_LOG(error) << "Failed to initialize MP3 encoder parameters: "
-                            << mp3lame_error_to_string(init_result) << " (code: " << init_result << ")";
+                            << mp3lame_init_error_to_string(init_result) << " (code: " << init_result << ")";
         throw std::runtime_error("Failed to initialize MP3 encoder parameters");
     }
 
@@ -67,7 +83,7 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
 }
 
 void encode_samples_to_mp3(MP3EncoderContext& ctx,
-                               const int16_t* samples,
+                               int16_t* samples,
                                int sample_count,
                                uint64_t chunk_start_position,
                                std::vector<uint8_t>& output_data) {
@@ -86,37 +102,40 @@ void encode_samples_to_mp3(MP3EncoderContext& ctx,
       return;
     }
 
-    // Default to mono
-    const int16_t* left_channel = samples;
-    const int16_t* right_channel = nullptr;
-    int num_samples_per_channel = sample_count;
-
-    if (ctx.num_channels == 2) {
-        // Stereo: deinterleave samples into separate left/right buffers
-        std::vector<int16_t> interleaved(samples, samples + sample_count);
-        deinterleave_samples(interleaved, ctx.left_samples, ctx.right_samples);
-        left_channel = ctx.left_samples.data();
-        right_channel = ctx.right_samples.data();
-        num_samples_per_channel = static_cast<int>(ctx.left_samples.size());
-    }
-
-    // Allocate output buffer: largest size is 1.25 * num_samples + 7200 (from LAME docs)
+    int num_samples_per_channel = sample_count / ctx.num_channels;
     int mp3buf_size = static_cast<int>(1.25 * num_samples_per_channel + 7200);
     size_t old_size = output_data.size();
     output_data.resize(old_size + mp3buf_size);
 
-    int bytes_written = lame_encode_buffer(
-        ctx.encoder.get(),
-        left_channel,
-        right_channel,
-        num_samples_per_channel,
-        output_data.data() + old_size,
-        mp3buf_size
-    );
+    int bytes_written = 0;
+
+    if (ctx.num_channels == 1) {
+        // Mono: use lame_encode_buffer
+        bytes_written = lame_encode_buffer(
+            ctx.encoder.get(),
+            samples,              // left channel
+            nullptr,              // right channel (null for mono)
+            num_samples_per_channel,
+            output_data.data() + old_size,
+            mp3buf_size
+        );
+    } else if (ctx.num_channels == 2) {
+        // Stereo: use lame_encode_buffer_interleaved
+        bytes_written = lame_encode_buffer_interleaved(
+            ctx.encoder.get(),
+            samples,
+            num_samples_per_channel,
+            output_data.data() + old_size,
+            mp3buf_size
+        );
+    } else {
+        VIAM_SDK_LOG(error) << "Unsupported number of channels: " << ctx.num_channels;
+        throw std::invalid_argument("Only mono (1) and stereo (2) are supported");
+    }
 
     if (bytes_written < 0) {
-        VIAM_SDK_LOG(error) << "LAME encoding error: "
-                            << mp3lame_error_to_string(bytes_written) << " (code: " << bytes_written << ")";
+        VIAM_SDK_LOG(error) << "Error encoding samples: "
+                            << mp3lame_encode_error_to_string(bytes_written) << " (code: " << bytes_written << ")";
         throw std::runtime_error("LAME encoding error");
     }
 
@@ -135,7 +154,7 @@ void flush_mp3_encoder(MP3EncoderContext& ctx, std::vector<uint8_t>& output_data
     int flushed_bytes = lame_encode_flush(ctx.encoder.get(), mp3_buffer.data(), mp3_buffer.size());
     if (flushed_bytes < 0) {
         VIAM_SDK_LOG(error) << "LAME flush error: "
-                            << mp3lame_error_to_string(flushed_bytes) << " (code: " << flushed_bytes << ")";
+                            << mp3lame_encode_error_to_string(flushed_bytes) << " (code: " << flushed_bytes << ")";
         throw std::runtime_error("LAME encoding error during final flush");
     } else if (flushed_bytes > 0) {
         VIAM_SDK_LOG(debug) << "MP3 encoder flushed " << flushed_bytes << " bytes from internal lookahead buffer";
@@ -148,23 +167,6 @@ void cleanup_mp3_encoder(MP3EncoderContext& ctx) {
     ctx.sample_rate = 0;
     ctx.num_channels = 0;
     ctx.encoder_delay = 0;
-}
-
-// Takes a vector of interleaved samples and seperates them into seperate vectors
-// for left and right channels
-void deinterleave_samples(const std::vector<int16_t> &interleaved,
-    std::vector<int16_t> &left,
-    std::vector<int16_t> &right
-) noexcept {
-    int num_frames = interleaved.size() / 2;
-    left.resize(num_frames);
-    right.resize(num_frames);
-
-    for (int i = 0; i < num_frames; i++) {
-        left[i] = interleaved[2*i];
-        right[i] = interleaved[2*i + 1];
-    }
-
 }
 
 } // namespace microphone

@@ -166,19 +166,6 @@ TEST_F(MP3EncoderTest, FlushUninitializedEncoder) {
     );
 }
 
-TEST_F(MP3EncoderTest, DeinterleaveSamples) {
-    std::vector<int16_t> interleaved = {1, 2, 3, 4, 5, 6, 7, 8};
-    std::vector<int16_t> left, right;
-
-    deinterleave_samples(interleaved, left, right);
-
-    EXPECT_EQ(left.size(), 4);
-    EXPECT_EQ(right.size(), 4);
-    EXPECT_EQ(left[0], 1);
-    EXPECT_EQ(right[0], 2);
-    EXPECT_EQ(left[1], 3);
-    EXPECT_EQ(right[1], 4);
-}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);

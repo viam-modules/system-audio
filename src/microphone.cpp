@@ -69,7 +69,7 @@ static void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uin
 
 static void encode_audio_chunk(
     AudioCodec codec,
-    const int16_t* samples,
+    int16_t* samples,
     int sample_count,
     uint64_t chunk_start_position,
     MP3EncoderContext& mp3_ctx,
