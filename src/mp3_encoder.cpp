@@ -141,7 +141,7 @@ void encode_samples_to_mp3(MP3EncoderContext& ctx,
     }
 
     // Resize to actual bytes written
-    output_data.resize(old_size + bytes_written);
+    output_data.resize(current_size + bytes_written);
 }
 
 void flush_mp3_encoder(MP3EncoderContext& ctx, std::vector<uint8_t>& output_data) {
