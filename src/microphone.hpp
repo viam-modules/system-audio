@@ -17,11 +17,15 @@
 namespace microphone {
 namespace vsdk = ::viam::sdk;
 
+constexpr double DEFAULT_HISTORICAL_THROTTLE_MS = 50;
+
+
 struct ConfigParams {
     std::string device_name;
     std::optional<int> sample_rate;  // optional: may use device default
     std::optional<int> num_channels;
     std::optional<double> latency_ms;
+    std::optional<int> historical_throttle_ms;  // Throttle time for historical data playback
 };
 
 struct ActiveStreamConfig {
@@ -93,6 +97,7 @@ public:
     int sample_rate_;
     int num_channels_;
     double latency_;
+    int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;
 
     // The mutex protects the stream, context, and the active streams counter

@@ -40,6 +40,10 @@ ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) {
         params.latency_ms = *attrs.at("latency").get<double>();
     }
 
+    if (attrs.count("historical_throttle_ms")) {
+        params.historical_throttle_ms = static_cast<int>(*attrs.at("historical_throttle_ms").get<double>());
+    }
+
     return params;
 }
 
@@ -85,6 +89,18 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
         if (latency_ms < 0) {
             VIAM_SDK_LOG(error) << "[validate] latency must be non-negative";
             throw std::invalid_argument("latency must be non-negative");
+        }
+    }
+
+    if(attrs.count("historical_throttle_ms")) {
+        if (!attrs["historical_throttle_ms"].is_a<double>()) {
+            VIAM_SDK_LOG(error) << "[validate] historical_throttle_ms attribute must be a number";
+            throw std::invalid_argument("historical_throttle_ms attribute must be a number");
+        }
+        double historical_throttle_ms = *attrs.at("historical_throttle_ms").get<double>();
+        if (historical_throttle_ms < 0) {
+            VIAM_SDK_LOG(error) << "[validate] historical_throttle_ms must be non-negative";
+            throw std::invalid_argument("historical_throttle_ms must be non-negative");
         }
     }
     return {};
@@ -139,10 +155,9 @@ void Microphone::get_audio(std::string const& codec,
         throw std::invalid_argument(buffer.str());
     }
 
-    // Set duration timer
-    auto start_time = std::chrono::steady_clock::time_point();
-    auto end_time = std::chrono::steady_clock::time_point::max();
-    bool timer_started = false;
+    // Track audio duration using timestamps
+    int64_t first_chunk_start_timestamp_ns = 0;
+    bool duration_limit_set = false;
 
     uint64_t sequence = 0;
 
@@ -166,10 +181,12 @@ void Microphone::get_audio(std::string const& codec,
     // Get sample rate and channels - will be updated if context changes
     int stream_sample_rate = 0;
     int stream_num_channels = 0;
+    int stream_historical_throttle_ms = 0;
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_sample_rate = sample_rate_;
         stream_num_channels = num_channels_;
+        stream_historical_throttle_ms = historical_throttle_ms_;
     }
 
     int samples_per_chunk = (stream_sample_rate * CHUNK_DURATION_SECONDS) * stream_num_channels;
@@ -182,7 +199,7 @@ void Microphone::get_audio(std::string const& codec,
         throw std::runtime_error(buffer.str());
     }
 
-    while (std::chrono::steady_clock::now() < end_time) {
+    while (true) {
         // Check if audio_context_ changed (device reconfigured)
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
@@ -196,6 +213,7 @@ void Microphone::get_audio(std::string const& codec,
                     stream_sample_rate = sample_rate_;
                     stream_num_channels = num_channels_;
                     samples_per_chunk = (stream_sample_rate * CHUNK_DURATION_SECONDS) * stream_num_channels;
+                    stream_historical_throttle_ms = historical_throttle_ms_;
                 }
                 // Switch to new context and reset read position
                 stream_context = audio_context_;
@@ -238,12 +256,25 @@ void Microphone::get_audio(std::string const& codec,
         chunk.start_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position);
         chunk.end_timestamp_ns = stream_context->calculate_sample_timestamp(chunk_start_position + samples_read);
 
-        // Start duration timer after first chunk arrives
-        if (!timer_started && duration_seconds > 0) {
-            start_time = std::chrono::steady_clock::now();
-            end_time = start_time + std::chrono::milliseconds(static_cast<int64_t>(duration_seconds * 1000));
-            timer_started = true;
+        // Set audio duration limit after first chunk (save the starting timestamp)
+        if (!duration_limit_set && duration_seconds > 0) {
+            first_chunk_start_timestamp_ns = chunk.start_timestamp_ns.count();
+            duration_limit_set = true;
+            VIAM_SDK_LOG(debug) << "Audio duration limit set: will read " << duration_seconds
+                               << " seconds starting from timestamp " << first_chunk_start_timestamp_ns;
         }
+
+        // Check if we've read enough audio
+            int64_t time_elapsed_ns = chunk.end_timestamp_ns.count() - first_chunk_start_timestamp_ns;
+            double time_elapsed_seconds = time_elapsed_ns / 1e9;
+
+            if (time_elapsed_seconds >= duration_seconds) {
+                VIAM_SDK_LOG(debug) << "Reached audio duration limit: read " << time_elapsed_seconds
+                                   << "s, limit was " << duration_seconds << "s";
+                // Send final chunk before exiting
+                chunk_handler(std::move(chunk));
+                break;
+            }
 
         if (!chunk_handler(std::move(chunk))) {
             // if the chunk callback returned false, the stream has ended
@@ -253,6 +284,18 @@ void Microphone::get_audio(std::string const& codec,
                 active_streams_--;
             }
             return;
+        }
+
+        // Check if we're reading historical data (far behind write position)
+        if (previous_timestamp != 0 && duration_limit_set) {
+            uint64_t current_write_pos = stream_context->get_write_position();
+            uint64_t distance_behind = current_write_pos - read_position;
+            // If we're more than 1 second behind, we're reading historical data
+            uint64_t one_second_samples = stream_sample_rate * stream_num_channels;
+            if (distance_behind > one_second_samples) {
+                // Throttle historical data to give clients time to process
+                std::this_thread::sleep_for(std::chrono::milliseconds(stream_historical_throttle_ms));
+            }
         }
     }
 
@@ -330,6 +373,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
     double new_latency = params.latency_ms.has_value()
         ? params.latency_ms.value() / 1000.0  // Convert ms to seconds
         : deviceInfo->defaultLowInputLatency;
+    double new_historical_throttle_ms = params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
 
     // Validate num_channels against device's max input channels
     if (new_num_channels > deviceInfo->maxInputChannels) {
@@ -365,6 +409,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
             sample_rate_ = new_sample_rate;
             num_channels_ = new_num_channels;
             latency_ = new_latency;
+            historical_throttle_ms_ = new_historical_throttle_ms;
             audio_context_ = new_audio_context;
         }
 
@@ -401,6 +446,7 @@ void Microphone::setupStreamFromConfig(const ConfigParams& params) {
         sample_rate_ = new_sample_rate;
         num_channels_ = new_num_channels;
         latency_ = new_latency;
+        historical_throttle_ms_ = new_historical_throttle_ms;
         audio_context_ = new_audio_context;
     }
 
