@@ -16,16 +16,29 @@ enum class AudioCodec {
     MP3
 };
 
+static std::string toLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+        [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+
 // Convert string codec to enum
 static AudioCodec parse_codec(const std::string& codec_str) {
-    if (codec_str == vsdk::audio_codecs::PCM_32) {
+    std::string codec = toLower(codec_str);
+    if (codec == vsdk::audio_codecs::PCM_32) {
         return AudioCodec::PCM_32;
-    } else if (codec_str == vsdk::audio_codecs::PCM_32_FLOAT) {
+    } else if (codec == vsdk::audio_codecs::PCM_32_FLOAT) {
         return AudioCodec::PCM_32_FLOAT;
-    } else if (codec_str == vsdk::audio_codecs::MP3) {
+    } else if (codec == vsdk::audio_codecs::MP3) {
         return AudioCodec::MP3;
-    } else {
+    } else if (codec == vsdk::audio_codecs::PCM_16)  {
         return AudioCodec::PCM_16;
+    } else {
+        std::ostringstream buffer;
+        buffer << "Unsupported codec: " << codec <<
+        ". Supported codecs: pcm16, pcm32, pcm32_float, mp3";
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::invalid_argument(buffer.str());
     }
 }
 
@@ -92,16 +105,10 @@ static void encode_audio_chunk(
     }
 }
 
-static std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-        [](unsigned char c) { return std::tolower(c); });
-    return s;
-}
-
 // Calculate chunk size based on codec and audio format
 // For MP3, aligns chunk size with the mp3 frame size
-static int calculate_chunk_size(const std::string& codec, int sample_rate, int num_channels, const MP3EncoderContext* mp3_ctx = nullptr) {
-    if (codec == vsdk::audio_codecs::MP3) {
+static int calculate_chunk_size(const AudioCodec codec, int sample_rate, int num_channels, const MP3EncoderContext* mp3_ctx = nullptr) {
+    if (codec == AudioCodec::MP3) {
         if (mp3_ctx == nullptr || mp3_ctx->frame_size == 0) {
             throw std::invalid_argument("MP3 encoder must be initialized before calculating chunk size");
         }
@@ -256,22 +263,8 @@ void Microphone::get_audio(std::string const& codec,
 
     VIAM_SDK_LOG(debug) << "get_audio called";
 
-    std::string requested_codec = toLower(codec);
-
-    // Validate codec is supported
-    if (requested_codec != vsdk::audio_codecs::PCM_16 &&
-        requested_codec != vsdk::audio_codecs::PCM_32 &&
-        requested_codec != vsdk::audio_codecs::PCM_32_FLOAT &&
-        requested_codec != vsdk::audio_codecs::MP3) {
-        std::ostringstream buffer;
-        buffer << "Unsupported codec: " << codec <<
-        ". Supported codecs: pcm16, pcm32, pcm32_float, mp3";
-        VIAM_SDK_LOG(error) << buffer.str();
-        throw std::invalid_argument(buffer.str());
-    }
-
     // Parse codec string to enum
-    AudioCodec codec_enum = parse_codec(requested_codec);
+    AudioCodec codec_enum = parse_codec(codec);
 
     // guard to increment and decrement the active stream count
     StreamGuard stream_guard(stream_ctx_mu_, active_streams_);
@@ -318,12 +311,12 @@ void Microphone::get_audio(std::string const& codec,
     uint64_t last_chunk_end_position;
 
     // Initialize MP3 encoder if needed
-    if (requested_codec == vsdk::audio_codecs::MP3) {
+    if (codec_enum == AudioCodec::MP3) {
         initialize_mp3_encoder(mp3_ctx, stream_sample_rate, stream_num_channels);
     }
 
     // Calculate chunk size based on codec
-    int samples_per_chunk = calculate_chunk_size(requested_codec, stream_sample_rate, stream_num_channels, &mp3_ctx);
+    int samples_per_chunk = calculate_chunk_size(codec_enum, stream_sample_rate, stream_num_channels, &mp3_ctx);
 
     if (samples_per_chunk <= 0){
         std::ostringstream buffer;
@@ -347,14 +340,14 @@ void Microphone::get_audio(std::string const& codec,
                     stream_num_channels = num_channels_;
 
                     // Reinitialize MP3 encoder with new config if needed
-                    if (requested_codec == vsdk::audio_codecs::MP3) {
+                    if (codec_enum == AudioCodec::MP3) {
                         cleanup_mp3_encoder(mp3_ctx);
                         initialize_mp3_encoder(mp3_ctx, stream_sample_rate, stream_num_channels);
                         VIAM_SDK_LOG(info) << "Reinitialized MP3 encoder with new config";
                     }
 
                     // Recalculate chunk size using new config
-                    samples_per_chunk = calculate_chunk_size(requested_codec, stream_sample_rate, stream_num_channels, &mp3_ctx);
+                    samples_per_chunk = calculate_chunk_size(codec_enum, stream_sample_rate, stream_num_channels, &mp3_ctx);
 
                     if (samples_per_chunk <= 0){
                         std::ostringstream buffer;
@@ -404,7 +397,7 @@ void Microphone::get_audio(std::string const& codec,
 
         // Calculate timestamps based on sample position in stream
         uint64_t chunk_end_position = chunk_start_position + samples_read;
-        if (requested_codec == vsdk::audio_codecs::MP3 && mp3_ctx.encoder) {
+        if (codec_enum == AudioCodec::MP3 && mp3_ctx.encoder) {
             // Aadjust for encoder delay since decoded output will be shifted
             int delay_samples = mp3_ctx.encoder_delay * stream_num_channels;
             // Timestamps should reflect the data the encoder returned,

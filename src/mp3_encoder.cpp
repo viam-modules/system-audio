@@ -5,7 +5,7 @@
 namespace microphone {
 
 // Helper function to convert MP3LAME initialization error codes to readable strings
-static const char* mp3lame_init_error_to_string(int error_code) {
+static const std::string mp3lame_init_error_to_string(int error_code) {
     switch (error_code) {
         case LAME_GENERICERROR:
             return "MP3LAME: generic error";
@@ -23,7 +23,7 @@ static const char* mp3lame_init_error_to_string(int error_code) {
 }
 
 // Helper function to convert MP3LAME encoding error codes to readable strings
-static const char* mp3lame_encode_error_to_string(int error_code) {
+static const std::string mp3lame_encode_error_to_string(int error_code) {
     switch (error_code) {
         case -1:
             return "MP3LAME: mp3buf is too small";
