@@ -17,5 +17,8 @@ jobs:
       run: |
         make setup
 
+    - name: Run linter
+      run : make lint
+
     - name: Run unit tests
       run: make test

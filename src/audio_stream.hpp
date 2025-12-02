@@ -1,19 +1,19 @@
 #pragma once
 
-#include <viam/sdk/components/audio_in.hpp>
-#include <viam/sdk/common/audio.hpp>
-#include "portaudio.h"
-#include <chrono>
-#include <vector>
-#include <mutex>
 #include <atomic>
+#include <chrono>
+#include <mutex>
+#include <vector>
+#include <viam/sdk/common/audio.hpp>
+#include <viam/sdk/components/audio_in.hpp>
+#include "portaudio.h"
 
 namespace microphone {
 
 namespace vsdk = ::viam::sdk;
 
-constexpr int BUFFER_DURATION_SECONDS = 30;  // How much audio history to keep in buffer
-constexpr double CHUNK_DURATION_SECONDS = 0.1;   // 100ms chunks (10 chunks per second)
+constexpr int BUFFER_DURATION_SECONDS = 30;     // How much audio history to keep in buffer
+constexpr double CHUNK_DURATION_SECONDS = 0.1;  // 100ms chunks (10 chunks per second)
 constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
 
 // AudioStreamContext managers a circular buffer of audio for a single
@@ -33,9 +33,7 @@ struct AudioStreamContext {
 
     std::atomic<uint64_t> total_samples_written;
 
-    AudioStreamContext(const vsdk::audio_info& audio_info,
-                      int samples_per_chunk,
-                      int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
+    AudioStreamContext(const vsdk::audio_info& audio_info, int samples_per_chunk, int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
 
     // Writes an audio sample to the audio buffer
     void write_sample(int16_t sample) noexcept;
@@ -47,7 +45,6 @@ struct AudioStreamContext {
     std::chrono::nanoseconds calculate_sample_timestamp(uint64_t sample_number) noexcept;
     uint64_t get_sample_number_from_timestamp(int64_t timestamp) noexcept;
 };
-
 
 /**
  * PortAudio callback function - runs on real-time audio thread.
@@ -62,10 +59,11 @@ struct AudioStreamContext {
  * call library functions or call other functions from the stream callback
  * that may block or take an unpredictable amount of time to complete.
  */
-int AudioCallback(const void *inputBuffer, void *outputBuffer,
+int AudioCallback(const void* inputBuffer,
+                  void* outputBuffer,
                   unsigned long framesPerBuffer,
                   const PaStreamCallbackTimeInfo* timeInfo,
                   PaStreamCallbackFlags statusFlags,
-                  void *userData);
+                  void* userData);
 
-} // namespace microphone
+}  // namespace microphone

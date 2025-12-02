@@ -1,7 +1,11 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
+SOURCE_FILES := $(shell find src -type f \( -name '*.cpp' -o -name '*.hpp' \))
+CPP_FILES := $(filter %.cpp,$(SOURCE_FILES))
 
-.PHONY: build setup test clean
+.PHONY: build setup test clean format run-clang-tidy
+
+default: module.tar.gz
 
 build: $(BIN)
 
@@ -24,3 +28,16 @@ module.tar.gz: build meta.json
 
 setup:
 	bin/setup.sh
+
+lint:
+	./bin/lint.sh
+
+run-clang-tidy:
+	clang-tidy-19 \
+        -p build \
+        --config-file ./.clang-tidy \
+        --header-filter=".*/viam/(ur/module|trajex)/.*" \
+	$(CPP_FILES)
+
+run-clang-check:
+	clang-check -p build $(CPP_FILES)
