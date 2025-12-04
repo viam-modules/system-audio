@@ -3,7 +3,7 @@ BIN := build-conan/build/RelWithDebInfo/audio-module
 SOURCE_FILES := $(shell find src -type f \( -name '*.cpp' -o -name '*.hpp' \))
 CPP_FILES := $(filter %.cpp,$(SOURCE_FILES))
 
-.PHONY: build setup test clean format run-clang-tidy
+.PHONY: build setup test clean lint
 
 default: module.tar.gz
 
@@ -31,4 +31,3 @@ setup:
 
 lint:
 	./bin/lint.sh
-
