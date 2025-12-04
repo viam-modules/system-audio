@@ -28,25 +28,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install deps (mac)
-        if: matrix.os == 'macos-latest'
-        run: brew install python@3.11
-
-      - name: Install deps (linux)
-        if: startsWith(matrix.os, 'ubuntu')
+      - name: Set up build environment
         run: |
-          sudo apt update -y
-          apt upgrade -y
-          apt install -y cmake python3.11 python3.11-venv wget
+          make setup
 
-      - name: Set up python/conan
+      - name: Make module.tar.gz
         run: |
-          python3 -m venv venv && . ./venv/bin/activate
-          python3 -m pip install conan
-          conan profile detect
-          conan remote add viamconan https://viam.jfrog.io/artifactory/api/conan/viamconan --index 0
+          make module.tar.gz
 
-      - name: Build package and module
-        run: |
-          . ./venv/bin/activate
-          conan create . -o:a "viam-cpp-sdk/*:shared=False" -s:a build_type=Release -s:a compiler.cppstd=17 --build=missing -cc core:non_interactive=True
