@@ -249,7 +249,7 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps,
             audio::utils::StreamDirection::Output,
             speakerCallback,
             pa_,
-            30  // 30 second buffer for speaker
+            BUFFER_DURATION_SECONDS
         );
 
         // Set new configuration and restart stream under lock
