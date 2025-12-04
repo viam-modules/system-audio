@@ -32,12 +32,3 @@ setup:
 lint:
 	./bin/lint.sh
 
-run-clang-tidy:
-	clang-tidy-19 \
-        -p build \
-        --config-file ./.clang-tidy \
-        --header-filter=".*/viam/(ur/module|trajex)/.*" \
-	$(CPP_FILES)
-
-run-clang-check:
-	clang-check -p build $(CPP_FILES)
