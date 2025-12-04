@@ -8,7 +8,7 @@ from conan import ConanFile
 from conan.errors import ConanException
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.build import can_run
-from conan.tools.files import copy, load
+from conan.tools.files import copy,load
 
 class audio(ConanFile):
     name = "viam-audio"
@@ -25,7 +25,7 @@ class audio(ConanFile):
         "shared": True
     }
 
-    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*"
+    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*", "meta.json"
 
     def set_version(self):
         content = load(self, "CMakeLists.txt")
@@ -68,10 +68,10 @@ class audio(ConanFile):
             self.output.debug(f"Creating temporary directory {tmp_dir}")
 
             self.output.info("Copying audio-module binary")
-            copy(self, "audio-module", src=self.build_folder, dst=tmp_dir)
+            copy(self, "audio-module", src=self.package_folder, dst=tmp_dir)
 
             self.output.info("Copying meta.json")
-            copy(self, "meta.json", src=self.source_folder, dst=tmp_dir)
+            copy(self, "meta.json", src=self.package_folder, dst=tmp_dir)
 
             self.output.info("Creating module.tar.gz")
             with tarfile.open(os.path.join(self.deploy_folder, "module.tar.gz"), "w|gz") as tar:

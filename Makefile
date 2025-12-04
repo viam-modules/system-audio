@@ -38,7 +38,7 @@ conan-pkg:
 
 module: conan-pkg meta.json
 	test -f ./venv/bin/activate && . ./venv/bin/activate; \
-	conan install --requires=viam-orbbec/0.0.1 \
+	conan install --requires=viam-audio/0.0.1 \
 	-o:a "viam-cpp-sdk/*:shared=False" \
 	-s:a build_type=Release \
 	-s:a compiler.cppstd=17 \
