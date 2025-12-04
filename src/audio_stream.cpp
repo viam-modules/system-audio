@@ -9,12 +9,10 @@ namespace microphone {
 
 AudioStreamContext::AudioStreamContext(
     const vsdk::audio_info& audio_info,
-    int samples_per_chunk,
     int buffer_duration_seconds)
     : audio_buffer(nullptr)
     , buffer_capacity(0)
     , info(audio_info)
-    , samples_per_chunk(samples_per_chunk)
     , stream_start_time()
     , first_sample_adc_time(0.0)
     , first_callback_captured(false)
@@ -180,7 +178,7 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
         // first sample of the input buffer was captured,
         // synced with the clock of the device
         ctx->first_sample_adc_time = timeInfo->inputBufferAdcTime;
-        ctx->stream_start_time = std::chrono::steady_clock::now();
+        ctx->stream_start_time = std::chrono::system_clock::now();
         ctx->first_callback_captured.store(true);
     }
 
@@ -191,6 +189,50 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
     }
 
     return paContinue;
+}
+
+std::chrono::nanoseconds calculate_sample_timestamp(
+    const AudioStreamContext& ctx,
+    uint64_t sample_number)
+{
+    // Convert sample_number to frame number (samples include all channels)
+    uint64_t frame_number = sample_number / ctx.info.num_channels;
+    uint64_t elapsed_ns = (frame_number * NANOSECONDS_PER_SECOND) / ctx.info.sample_rate_hz;
+
+    auto elapsed_duration = std::chrono::nanoseconds(elapsed_ns);
+    auto absolute_time = ctx.stream_start_time + elapsed_duration;
+
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        absolute_time.time_since_epoch()
+    );
+}
+
+int calculate_aligned_chunk_size(int sample_rate, int num_channels, int mp3_frame_size) {
+    // Calculate how many frames fit into approximately 100-200ms
+    // Target: around 150ms for reasonable latency
+
+    double target_duration_seconds = 0.15;  // 150ms target
+    double samples_per_channel_target = sample_rate * target_duration_seconds;
+
+    // Round to nearest number of MP3 frames
+    int num_frames = static_cast<int>(samples_per_channel_target / mp3_frame_size + 0.5);
+
+    // Ensure at least 1 frame
+    if (num_frames < 1) {
+        num_frames = 1;
+    }
+
+    // Calculate total samples including all channels
+    int samples_per_channel = num_frames * mp3_frame_size;
+    int total_samples = samples_per_channel * num_channels;
+
+    double actual_duration = static_cast<double>(samples_per_channel) / sample_rate;
+    VIAM_SDK_LOG(debug) << "Calculated aligned chunk size: " << total_samples
+                       << " samples (" << num_frames << " MP3 frames of " << mp3_frame_size << " samples, "
+                       << actual_duration * 1000.0 << "ms, "
+                       << sample_rate << "Hz, " << num_channels << " channels)";
+
+    return total_samples;
 }
 
 } // namespace microphone
