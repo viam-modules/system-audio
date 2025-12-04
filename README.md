@@ -31,6 +31,7 @@ The following attributes are available for the `viam:audio:microphone` model:
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels to capture. Must not exceed the device's maximum input channels. Default: 1 |
 | `latency` | int | **Optional** | Suggested input latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide more responsive audio capture but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
+| `historical_throttle_ms` | int | **Optional** | Delay in milliseconds between chunks when streaming historical audio data using the previous_timestamp parameter (default: 50ms). Gives clients adequate time to process buffered audio data. |
 
 ### Reconfiguration Behavior
 
@@ -41,7 +42,7 @@ The microphone component supports reconfiguration - you can change stream attrib
 
 #### Important Considerations
 
-1. **Writing to fixed-format files (WAV, etc.)**
+1. **Writing to fixed-format files (WAV, MP3, etc.)**
    - WAV files have a fixed header with sample rate and channel count
    - Changing `sample_rate` or `num_channels` mid-stream will corrupt the file
    - **Solution:** Stop recording, save the file, then reconfigure and start a new file

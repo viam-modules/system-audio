@@ -18,6 +18,7 @@ struct ConfigParams {
     std::optional<int> sample_rate;
     std::optional<int> num_channels;
     std::optional<double> latency_ms;
+    std::optional<int> historical_throttle_ms;
 };
 
 // Configuration for opening a PortAudio stream
@@ -72,6 +73,10 @@ inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) 
 
     if (attrs.count("latency")) {
         params.latency_ms = *attrs.at("latency").get<double>();
+    }
+
+    if (attrs.count("historical_throttle_ms")) {
+        params.historical_throttle_ms = *attrs.at("historical_throttle_ms").get<double>();
     }
 
     return params;

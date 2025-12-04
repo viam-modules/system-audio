@@ -78,10 +78,8 @@ int speakerCallback(const void* inputBuffer,
         return paAbort;
     }
 
-    // userData points to OutputStreamContext
     audio::OutputStreamContext* ctx = static_cast<audio::OutputStreamContext*>(userData);
 
-    // Cast outputBuffer to writable int16_t pointer (NOT const!)
     int16_t* output = static_cast<int16_t*>(outputBuffer);
 
     int total_samples = framesPerBuffer * ctx->info.num_channels;
@@ -89,7 +87,7 @@ int speakerCallback(const void* inputBuffer,
     // Load current playback position from the context
     uint64_t read_pos = ctx->playback_position.load(std::memory_order_relaxed);
 
-    // Read samples from our circular buffer to the portaudio output buffer
+    // Read samples from our circular buffer and put into portaudio output buffer
     int samples_read = ctx->read_samples(output, total_samples, read_pos);
 
     // Store updated playback position
@@ -154,7 +152,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
     if (info && info->codec != vsdk::audio_codecs::PCM_16) {
         VIAM_SDK_LOG(error) << "unsupported codec: " << info->codec << " only PCM_16 is supported";
-        throw std::invalid_argument("Audio codec must be PCM_16 format");
+        throw std::invalid_argument("Audio codec must be PCM16 format");
     }
 
     // Convert uint8_t bytes to int16_t samples
@@ -162,7 +160,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     if (audio_data.size() % 2 != 0) {
         VIAM_SDK_LOG(error) << "Audio data size must be even for PCM_16 format, got "
                            << audio_data.size() << " bytes";
-        throw std::invalid_argument("Audio data size must be even for PCM_16 format");
+        throw std::invalid_argument("Audio data size must be even for PCM16 format");
     }
 
     const int16_t* samples = reinterpret_cast<const int16_t*>(audio_data.data());

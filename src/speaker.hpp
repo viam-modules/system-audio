@@ -62,7 +62,6 @@ public:
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
-    void setupStreamFromConfig(const SpeakerConfigParams& params);
 
     // Member variables
     std::string device_name_;

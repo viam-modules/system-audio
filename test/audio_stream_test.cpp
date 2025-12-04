@@ -239,17 +239,19 @@ TEST_F(InputStreamContextTest, CalculateSampleTimestamp) {
     ).count();
 
     // Test timestamp for sample 0
-    auto timestamp1 = ::microphone::calculate_sample_timestamp(*context_, 0);
+    auto timestamp1 = context_->calculate_sample_timestamp(0);
     EXPECT_EQ(timestamp1.count(), baseline_ns);
 
     // Test timestamp for sample at 1 second (44100 samples at 44.1kHz)
-    auto timestamp2 = ::microphone::calculate_sample_timestamp(*context_, 44100);
+    auto timestamp2 = context_->calculate_sample_timestamp(44100);
     EXPECT_NEAR(timestamp2.count(), baseline_ns + 1'000'000'000, 1000);  // ~1 second
 
     // Test timestamp for sample at 0.5 seconds (22050 samples)
-    auto timestamp3 = ::microphone::calculate_sample_timestamp(*context_, 22050);
-    EXPECT_NEAR(timestamp3.count(), baseline_ns + 500'000'000, 1000);
+    auto timestamp3 =  context_->calculate_sample_timestamp(22050);
+    EXPECT_NEAR(timestamp3.count(), baseline_ns + 500'000'000, 1000);  // ~0.5 seconds
 }
+
+
 
 // OutputStreamContext tests
 class OutputStreamContextTest : public ::testing::Test {
@@ -382,7 +384,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnZeroNumChannels) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 44100, 0};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, 10);
+        audio::InputStreamContext ctx(info,10);
     }, std::invalid_argument);
 }
 
@@ -390,7 +392,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeNumChannels) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 44100, -1};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, 10);
+        audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -398,7 +400,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnZeroSampleRate) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 0, 2};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, 10);
+        audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -406,7 +408,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeSampleRate) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, -44100, 2};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, 10);
+        audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -414,7 +416,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnZeroBufferDuration) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 44100, 2};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, 0);
+        audio::InputStreamContext ctx(info, 0);
     }, std::invalid_argument);
 }
 
@@ -422,7 +424,7 @@ TEST_F(InputStreamContextTest, InputStreamContextThrowsOnNegativeBufferDuration)
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 44100, 2};
 
     EXPECT_THROW({
-        audio::InputStreamContext ctx(info, 4410, -5);
+        audio::InputStreamContext ctx(info, -5);
     }, std::invalid_argument);
 }
 

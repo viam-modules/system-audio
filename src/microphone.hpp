@@ -18,6 +18,8 @@
 namespace microphone {
 namespace vsdk = ::viam::sdk;
 
+constexpr double DEFAULT_HISTORICAL_THROTTLE_MS = 50;
+
 struct ActiveStreamConfig {
     std::string device_name;
     int sample_rate;
@@ -35,6 +37,18 @@ struct ActiveStreamConfig {
 };
 
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
+
+
+// Calculates the initial read position from a previous timestamp
+// Validates the timestamp and throws std::invalid_argument if:
+//   - stream_context is null
+//   - previous_timestamp < 0 (negative)
+//   - previous_timestamp is before stream started
+//   - previous_timestamp is in the future (audio not yet captured)
+//   - previous_timestamp is too old (audio has been overwritten in circular buffer)
+// Returns the write position if previous_timestamp == 0 (default: most recent audio)
+uint64_t get_initial_read_position(const std::shared_ptr<audio::InputStreamContext>& stream_context,
+                                    int64_t previous_timestamp);
 
 
 class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigurable {
@@ -58,17 +72,13 @@ public:
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
-    // internal functions, public for testing
-    void openStream(PaStream*& stream);
-    void startStream(PaStream* stream);
-    void shutdownStream(PaStream* stream);
-
     // Member variables
     std::string device_name_;
     PaDeviceIndex device_index_;
     int sample_rate_;
     int num_channels_;
     double latency_;
+    int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;
 
     // The mutex protects the stream, context, and the active streams counter
