@@ -1,19 +1,19 @@
 #pragma once
 
-#include <viam/sdk/components/audio_in.hpp>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <vector>
 #include <viam/sdk/common/audio.hpp>
+#include <viam/sdk/components/audio_in.hpp>
 #include <viam/sdk/config/resource.hpp>
 #include <viam/sdk/resource/reconfigurable.hpp>
-#include "portaudio.h"
-#include "portaudio.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
-#include <memory>
-#include <string>
-#include <vector>
-#include <functional>
-#include <optional>
-#include <tuple>
+#include "portaudio.h"
+#include "portaudio.hpp"
 
 namespace microphone {
 namespace vsdk = ::viam::sdk;
@@ -38,7 +38,6 @@ struct ActiveStreamConfig {
 
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
 
-
 // Calculates the initial read position from a previous timestamp
 // Validates the timestamp and throws std::invalid_argument if:
 //   - stream_context is null
@@ -47,14 +46,11 @@ PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::
 //   - previous_timestamp is in the future (audio not yet captured)
 //   - previous_timestamp is too old (audio has been overwritten in circular buffer)
 // Returns the write position if previous_timestamp == 0 (default: most recent audio)
-uint64_t get_initial_read_position(const std::shared_ptr<audio::InputStreamContext>& stream_context,
-                                    int64_t previous_timestamp);
-
+uint64_t get_initial_read_position(const std::shared_ptr<audio::InputStreamContext>& stream_context, int64_t previous_timestamp);
 
 class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigurable {
-public:
-    Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg,
-               audio::portaudio::PortAudioInterface* pa = nullptr);
+   public:
+    Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa = nullptr);
 
     ~Microphone();
 
@@ -91,7 +87,6 @@ public:
     int active_streams_;
 };
 
-
 /**
  * PortAudio callback function - runs on real-time audio thread.
  *
@@ -105,10 +100,11 @@ public:
  * call library functions or call other functions from the stream callback
  * that may block or take an unpredictable amount of time to complete.
  */
-int AudioCallback(const void *inputBuffer, void *outputBuffer,
+int AudioCallback(const void* inputBuffer,
+                  void* outputBuffer,
                   unsigned long framesPerBuffer,
                   const PaStreamCallbackTimeInfo* timeInfo,
                   PaStreamCallbackFlags statusFlags,
-                  void *userData);
+                  void* userData);
 
-} // namespace microphone
+}  // namespace microphone

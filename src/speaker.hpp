@@ -1,22 +1,21 @@
 #pragma once
 
-#include <viam/sdk/components/audio_out.hpp>
-#include <viam/sdk/common/audio.hpp>
-#include <viam/sdk/config/resource.hpp>
-#include <viam/sdk/resource/reconfigurable.hpp>
-#include "portaudio.h"
-#include "portaudio.hpp"
-#include "audio_stream.hpp"
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
-#include <mutex>
-#include <atomic>
-#include <optional>
+#include <viam/sdk/common/audio.hpp>
+#include <viam/sdk/components/audio_out.hpp>
+#include <viam/sdk/config/resource.hpp>
+#include <viam/sdk/resource/reconfigurable.hpp>
+#include "audio_stream.hpp"
+#include "portaudio.h"
+#include "portaudio.hpp"
 
 namespace speaker {
 namespace vsdk = ::viam::sdk;
-
 
 struct SpeakerStreamConfig {
     PaDeviceIndex device_index;
@@ -34,20 +33,16 @@ struct SpeakerConfigParams {
     std::optional<double> latency_ms;
 };
 
-
 int speakerCallback(const void* inputBuffer,
-                     void* outputBuffer,
-                     unsigned long framesPerBuffer,
-                     const PaStreamCallbackTimeInfo* timeInfo,
-                     PaStreamCallbackFlags statusFlags,
-                     void* userData);
-
-
+                    void* outputBuffer,
+                    unsigned long framesPerBuffer,
+                    const PaStreamCallbackTimeInfo* timeInfo,
+                    PaStreamCallbackFlags statusFlags,
+                    void* userData);
 
 class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurable {
-public:
-    Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg,
-            audio::portaudio::PortAudioInterface* pa = nullptr);
+   public:
+    Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa = nullptr);
 
     ~Speaker();
 
@@ -55,10 +50,7 @@ public:
 
     viam::sdk::ProtoStruct do_command(const viam::sdk::ProtoStruct& command);
 
-
-    void play(std::vector<uint8_t> const& audio_data,
-                      boost::optional<viam::sdk::audio_info> info,
-                      const viam::sdk::ProtoStruct& extra);
+    void play(std::vector<uint8_t> const& audio_data, boost::optional<viam::sdk::audio_info> info, const viam::sdk::ProtoStruct& extra);
 
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
@@ -80,7 +72,6 @@ public:
 
     // Audio context for speaker playback (includes buffer and playback position tracking)
     std::shared_ptr<audio::OutputStreamContext> audio_context_;
-
 };
 
-} // namespace speaker
+}  // namespace speaker

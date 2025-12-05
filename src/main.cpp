@@ -1,8 +1,8 @@
-#include "microphone.hpp"
-#include "speaker.hpp"
-#include "portaudio.hpp"
 #include <viam/sdk/common/instance.hpp>
 #include <viam/sdk/module/service.hpp>
+#include "microphone.hpp"
+#include "portaudio.hpp"
+#include "speaker.hpp"
 
 #include <iostream>
 #include <memory>
@@ -30,7 +30,6 @@ std::vector<std::shared_ptr<vsdk::ModelRegistration>> create_all_model_registrat
 
     return registrations;
 }
-
 
 int serve(int argc, char** argv) try {
     // Every Viam C++ SDK program must have one and only one Instance object
@@ -62,6 +61,3 @@ int main(int argc, char* argv[]) {
 
     return serve(argc, argv);
 };
-
-
-

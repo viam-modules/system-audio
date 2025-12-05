@@ -1,20 +1,15 @@
 #pragma once
 
-#include "mp3_encoder.hpp"
+#include <cstdint>
 #include <string>
 #include <vector>
-#include <cstdint>
+#include "mp3_encoder.hpp"
 
 namespace audio {
 namespace codec {
 
 // Audio codec types supported by the microphone
-enum class AudioCodec {
-    PCM_16,
-    PCM_32,
-    PCM_32_FLOAT,
-    MP3
-};
+enum class AudioCodec { PCM_16, PCM_32, PCM_32_FLOAT, MP3 };
 
 // Convert string to lowercase
 std::string toLower(std::string s);
@@ -37,14 +32,12 @@ void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uint8_t>& 
 
 // Encode audio chunk based on codec type
 // Dispatches to appropriate encoding function based on codec
-void encode_audio_chunk(
-    AudioCodec codec,
-    int16_t* samples,
-    int sample_count,
-    uint64_t chunk_start_position,
-    microphone::MP3EncoderContext& mp3_ctx,
-    std::vector<uint8_t>& output_data);
+void encode_audio_chunk(AudioCodec codec,
+                        int16_t* samples,
+                        int sample_count,
+                        uint64_t chunk_start_position,
+                        microphone::MP3EncoderContext& mp3_ctx,
+                        std::vector<uint8_t>& output_data);
 
-
-} // namespace codec
-} // namespace audio
+}  // namespace codec
+}  // namespace audio

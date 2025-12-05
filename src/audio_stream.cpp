@@ -1,33 +1,24 @@
 #include "audio_stream.hpp"
-#include "portaudio.h"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include "portaudio.h"
 
 namespace audio {
 
-AudioBuffer::AudioBuffer(
-    const vsdk::audio_info& audio_info,
-    int buffer_duration_seconds)
-    : audio_buffer(nullptr)
-    , buffer_capacity(0)
-    , info(audio_info)
-    , total_samples_written(0)
-{
+AudioBuffer::AudioBuffer(const vsdk::audio_info& audio_info, int buffer_duration_seconds)
+    : audio_buffer(nullptr), buffer_capacity(0), info(audio_info), total_samples_written(0) {
     if (audio_info.sample_rate_hz <= 0) {
-        VIAM_SDK_LOG(error) << "[AudioBuffer] sample_rate_hz must be positive, got: "
-                           << audio_info.sample_rate_hz;
+        VIAM_SDK_LOG(error) << "[AudioBuffer] sample_rate_hz must be positive, got: " << audio_info.sample_rate_hz;
         throw std::invalid_argument("sample_rate_hz must be positive");
     }
     if (audio_info.num_channels <= 0) {
-        VIAM_SDK_LOG(error) << "[AudioBuffer] num_channels must be positive, got: "
-                           << audio_info.num_channels;
+        VIAM_SDK_LOG(error) << "[AudioBuffer] num_channels must be positive, got: " << audio_info.num_channels;
         throw std::invalid_argument("num_channels must be positive");
     }
     if (buffer_duration_seconds <= 0) {
-        VIAM_SDK_LOG(error) << "[AudioBuffer] buffer_duration_seconds must be positive, got: "
-                           << buffer_duration_seconds;
+        VIAM_SDK_LOG(error) << "[AudioBuffer] buffer_duration_seconds must be positive, got: " << buffer_duration_seconds;
         throw std::invalid_argument("buffer_duration_seconds must be positive");
     }
 
@@ -35,18 +26,15 @@ AudioBuffer::AudioBuffer(
     buffer_capacity = audio_info.sample_rate_hz * audio_info.num_channels * buffer_duration_seconds;
 
     if (buffer_capacity <= 0) {
-        VIAM_SDK_LOG(error) << "[AudioBuffer] buffer_capacity must be positive, calculated: "
-                           << buffer_capacity;
+        VIAM_SDK_LOG(error) << "[AudioBuffer] buffer_capacity must be positive, calculated: " << buffer_capacity;
         throw std::invalid_argument("buffer_capacity must be positive");
     }
 
     try {
         audio_buffer = std::make_unique<std::atomic<int16_t>[]>(buffer_capacity);
     } catch (const std::bad_alloc& e) {
-        VIAM_SDK_LOG(error) << "[AudioBuffer] Failed to allocate audio buffer of size "
-                           << buffer_capacity<< " samples: " << e.what();
-        throw std::runtime_error("Failed to allocate audio buffer of size " +
-                                 std::to_string(buffer_capacity) + " samples: " + e.what());
+        VIAM_SDK_LOG(error) << "[AudioBuffer] Failed to allocate audio buffer of size " << buffer_capacity << " samples: " << e.what();
+        throw std::runtime_error("Failed to allocate audio buffer of size " + std::to_string(buffer_capacity) + " samples: " + e.what());
     }
 
     // Initialize all elements to 0
@@ -73,9 +61,8 @@ int AudioBuffer::read_samples(int16_t* buffer, int sample_count, uint64_t& read_
     uint64_t current_write_pos = total_samples_written.load(std::memory_order_acquire);
 
     // trying to read position that hasn't been written yet - return zero samples
-    if(read_position > current_write_pos) {
-        VIAM_SDK_LOG(warn) << "Read position " << read_position
-                           << " is ahead of write position " << current_write_pos
+    if (read_position > current_write_pos) {
+        VIAM_SDK_LOG(warn) << "Read position " << read_position << " is ahead of write position " << current_write_pos
                            << " - no samples available to read";
         return 0;
     }
@@ -86,8 +73,8 @@ int AudioBuffer::read_samples(int16_t* buffer, int sample_count, uint64_t& read_
         uint64_t old_position = read_position;
         read_position = current_write_pos - buffer_capacity;
         VIAM_SDK_LOG(warn) << "Audio buffer overrun: read position " << old_position
-                           << " has been overwritten. Skipping to oldest available sample at "
-                           << read_position << " (lost " << (read_position - old_position) << " samples)";
+                           << " has been overwritten. Skipping to oldest available sample at " << read_position << " (lost "
+                           << (read_position - old_position) << " samples)";
     }
 
     uint64_t available = current_write_pos - read_position;
@@ -109,7 +96,6 @@ uint64_t AudioBuffer::get_write_position() const noexcept {
     return total_samples_written.load(std::memory_order_acquire);
 }
 
-
 void AudioBuffer::clear() noexcept {
     total_samples_written.store(0, std::memory_order_relaxed);
 
@@ -118,50 +104,31 @@ void AudioBuffer::clear() noexcept {
     }
 }
 
-InputStreamContext::InputStreamContext(
-    const vsdk::audio_info& audio_info,
-    int buffer_duration_seconds)
-    : AudioBuffer(audio_info, buffer_duration_seconds)
-    , stream_start_time()
-    , first_sample_adc_time(0.0)
-    , first_callback_captured(false)
-{
-}
+InputStreamContext::InputStreamContext(const vsdk::audio_info& audio_info, int buffer_duration_seconds)
+    : AudioBuffer(audio_info, buffer_duration_seconds), stream_start_time(), first_sample_adc_time(0.0), first_callback_captured(false) {}
 
-std::chrono::nanoseconds InputStreamContext::calculate_sample_timestamp(
-    uint64_t sample_number) noexcept
-{
-     // Convert sample_number to frame number (samples include all channels)
+std::chrono::nanoseconds InputStreamContext::calculate_sample_timestamp(uint64_t sample_number) noexcept {
+    // Convert sample_number to frame number (samples include all channels)
     uint64_t frame_number = sample_number / info.num_channels;
     uint64_t elapsed_ns = (frame_number * NANOSECONDS_PER_SECOND) / info.sample_rate_hz;
 
     auto elapsed_duration = std::chrono::nanoseconds(elapsed_ns);
     auto absolute_time = stream_start_time + elapsed_duration;
 
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        absolute_time.time_since_epoch()
-    );
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(absolute_time.time_since_epoch());
 }
 
-uint64_t InputStreamContext::get_sample_number_from_timestamp(int64_t timestamp) noexcept{
+uint64_t InputStreamContext::get_sample_number_from_timestamp(int64_t timestamp) noexcept {
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
 
     int64_t elapsed_time_ns = timestamp - stream_start_timestamp_ns;
     double elapsed_seconds = static_cast<double>(elapsed_time_ns) / NANOSECONDS_PER_SECOND;
-    uint64_t sample_number = static_cast<uint64_t>(
-        elapsed_seconds * info.sample_rate_hz * info.num_channels
-    );
+    uint64_t sample_number = static_cast<uint64_t>(elapsed_seconds * info.sample_rate_hz * info.num_channels);
     return sample_number;
 }
 
+OutputStreamContext::OutputStreamContext(const vsdk::audio_info& audio_info, int buffer_duration_seconds)
+    : AudioBuffer(audio_info, buffer_duration_seconds), playback_position(0) {}
 
-OutputStreamContext::OutputStreamContext(
-    const vsdk::audio_info& audio_info,
-    int buffer_duration_seconds)
-    : AudioBuffer(audio_info, buffer_duration_seconds)
-    , playback_position(0)
-{
-}
-
-} // namespace audio
+}  // namespace audio
