@@ -624,7 +624,7 @@ int AudioCallback(const void *inputBuffer, void *outputBuffer,
         ctx->first_callback_captured.store(true);
     }
 
-    int total_samples = framesPerBuffer * ctx->info.num_channels;
+    uint64_t total_samples = framesPerBuffer * ctx->info.num_channels;
 
     for (int i = 0; i < total_samples; ++i) {
         ctx->write_sample(input[i]);

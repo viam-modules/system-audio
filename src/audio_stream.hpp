@@ -61,7 +61,7 @@ public:
 // Extends AudioBuffer with playback position tracking
 class OutputStreamContext : public AudioBuffer {
 public:
-    std::atomic<int> playback_position;
+    std::atomic<uint64_t> playback_position;
     OutputStreamContext(const vsdk::audio_info& audio_info,
                        int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
 };

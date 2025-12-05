@@ -20,7 +20,7 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg,
         audio::utils::StreamDirection::Output,
         speakerCallback,
         pa_,
-        30  // 30 second buffer for speaker
+        audio::BUFFER_DURATION_SECONDS
     );
 
     // Set new configuration and start stream under lock
@@ -77,7 +77,7 @@ int speakerCallback(const void* inputBuffer,
 
     int16_t* output = static_cast<int16_t*>(outputBuffer);
 
-    int total_samples = framesPerBuffer * ctx->info.num_channels;
+    uint64_t total_samples = framesPerBuffer * ctx->info.num_channels;
 
     // Load current playback position from the context
     uint64_t read_pos = ctx->playback_position.load(std::memory_order_relaxed);
@@ -185,10 +185,12 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     VIAM_SDK_LOG(debug) << "Playing " << num_samples << " samples ("
                        << audio_data.size() << " bytes)";
 
-    // Write samples to the audio buffer
+    // Write samples to the audio buffer and capture context
       uint64_t start_position;
+      std::shared_ptr<audio::OutputStreamContext> playback_context;
       {
           std::lock_guard<std::mutex> lock(stream_mu_);
+          playback_context = audio_context_;
           start_position = audio_context_->get_write_position();
 
           for (size_t i = 0; i < num_samples; i++) {
@@ -200,7 +202,15 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
       // Block until playback position catches up
       VIAM_SDK_LOG(debug) << "Waiting for playback to complete...";
-      while (audio_context_->playback_position.load() - start_position < num_samples) {
+      while (playback_context->playback_position.load() - start_position < num_samples) {
+          // Check if context changed (reconfigure happened)
+          {
+              std::lock_guard<std::mutex> lock(stream_mu_);
+              if (audio_context_ != playback_context) {
+                  VIAM_SDK_LOG(info) << "Audio playback interrupted by reconfigure, exiting gracefully";
+                  return;
+              }
+          }
           std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
 
@@ -235,6 +245,9 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps,
         if (audio_context_) {
             uint64_t write_pos = audio_context_->get_write_position();
             uint64_t playback_pos = audio_context_->playback_position.load();
+            VIAM_SDK_LOG(info) << write_pos;
+            VIAM_SDK_LOG(info) << playback_pos;
+
             if (write_pos > playback_pos) {
                 uint64_t unplayed_samples = write_pos - playback_pos;
                 double unplayed_seconds = static_cast<double>(unplayed_samples) /
@@ -249,7 +262,7 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps,
             audio::utils::StreamDirection::Output,
             speakerCallback,
             pa_,
-            BUFFER_DURATION_SECONDS
+            audio::BUFFER_DURATION_SECONDS
         );
 
         // Set new configuration and restart stream under lock

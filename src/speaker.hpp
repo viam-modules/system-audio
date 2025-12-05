@@ -72,11 +72,11 @@ public:
     static vsdk::Model model;
     std::mutex playback_mu_;
 
-    // The mutex protects the stream and playback buffer
-    std::mutex stream_mu_;
-
     PaStream* stream_;
     audio::portaudio::PortAudioInterface* pa_;
+
+    // Protects stream_, audio_context_, and stream configuration
+    std::mutex stream_mu_;
 
     // Audio context for speaker playback (includes buffer and playback position tracking)
     std::shared_ptr<audio::OutputStreamContext> audio_context_;
