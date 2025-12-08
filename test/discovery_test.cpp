@@ -101,9 +101,6 @@ TEST_F(DiscoveryTest, MixedInputOutputDevices) {
 
 }
 
-
-
-
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);

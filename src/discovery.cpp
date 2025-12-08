@@ -12,7 +12,9 @@ namespace discovery {
 namespace vsdk = ::viam::sdk;
 vsdk::Model AudioDiscovery::model = vsdk::Model("viam", "audio", "discovery");
 
-AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies, vsdk::ResourceConfig configuration, audio::portaudio::PortAudioInterface* pa)
+AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies,
+                               vsdk::ResourceConfig configuration,
+                               audio::portaudio::PortAudioInterface* pa)
     : Discovery(configuration.name()), pa_(pa) {}
 
 std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk::ProtoStruct& extra) {

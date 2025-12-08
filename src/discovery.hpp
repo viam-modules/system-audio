@@ -10,7 +10,9 @@ namespace discovery {
 
 class AudioDiscovery : public viam::sdk::Discovery {
    public:
-    explicit AudioDiscovery(viam::sdk::Dependencies dependencies, viam::sdk::ResourceConfig configuration, audio::portaudio::PortAudioInterface* pa = nullptr);
+    explicit AudioDiscovery(viam::sdk::Dependencies dependencies,
+                            viam::sdk::ResourceConfig configuration,
+                            audio::portaudio::PortAudioInterface* pa = nullptr);
     std::vector<viam::sdk::ResourceConfig> discover_resources(const viam::sdk::ProtoStruct& extra) override;
     viam::sdk::ProtoStruct do_command(const viam::sdk::ProtoStruct& command) override;
     static viam::sdk::Model model;
