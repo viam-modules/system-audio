@@ -72,7 +72,9 @@ void initialize_mp3_encoder(MP3EncoderContext& ctx, int sample_rate, int num_cha
     // Get the actual frame size LAME is using
     ctx.frame_size = lame_get_framesize(ctx.encoder.get());
 
-    VIAM_SDK_LOG(debug) << "MP3 encoder initialized: " << sample_rate << "Hz, " << num_channels << " channels, 192kbps CBR, encoder delay: " << ctx.encoder_delay << " samples, " << " frame size: " << ctx.frame_size << " samples/frame)";
+    VIAM_SDK_LOG(debug) << "MP3 encoder initialized: " << sample_rate << "Hz, " << num_channels
+                        << " channels, 192kbps CBR, encoder delay: " << ctx.encoder_delay << " samples, "
+                        << " frame size: " << ctx.frame_size << " samples/frame)";
 }
 
 void encode_samples_to_mp3(
