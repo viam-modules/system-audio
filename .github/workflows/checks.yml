@@ -13,12 +13,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
+    - name: Run linter and check formatting
+      run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-19
+          find ./src -type f \( -name \*.cpp -o -name \*.hpp \) | xargs clang-format-19 --dry-run --Werror --style=file
+
     - name: Install dependencies
       run: |
         make setup
-
-    - name: Run linter
-      run : make lint
 
     - name: Run unit tests
       run: make test

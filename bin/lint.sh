@@ -23,6 +23,7 @@ else
 	# It's not yet installed, so let's get it!
 	echo "Installing clang-format as a linter..."
 	if [[ "$(uname)" == "Linux" ]]; then
+		sudo apt-get update
 		sudo apt install -y clang-format-19
 	elif [[ "$(uname)" == "Darwin" ]]; then
 		brew install clang-format
