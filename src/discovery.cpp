@@ -12,12 +12,13 @@ namespace discovery {
 namespace vsdk = ::viam::sdk;
 vsdk::Model AudioDiscovery::model = vsdk::Model("viam", "audio", "discovery");
 
-AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies, vsdk::ResourceConfig configuration) : Discovery(configuration.name()) {}
+AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies, vsdk::ResourceConfig configuration, audio::portaudio::PortAudioInterface* pa)
+    : Discovery(configuration.name()), pa_(pa) {}
 
 std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk::ProtoStruct& extra) {
     std::vector<vsdk::ResourceConfig> configs;
 
-    int numDevices = Pa_GetDeviceCount();
+    int numDevices = pa_ ? pa_->getDeviceCount() : Pa_GetDeviceCount();
 
     if (numDevices <= 0) {
         VIAM_RESOURCE_LOG(warn) << "No audio devices found during discovery";
@@ -28,13 +29,13 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
 
     // Helper lambda to create device configs
     auto create_device_config = [](const std::string& component_type,
-                                     const std::string& device_type,
-                                     const std::string& api,
-                                     const std::string& device_name,
-                                     double sample_rate,
-                                     int num_channels,
-                                     int count,
-                                     const vsdk::Model& model) -> vsdk::ResourceConfig {
+                                   const std::string& device_type,
+                                   const std::string& api,
+                                   const std::string& device_name,
+                                   double sample_rate,
+                                   int num_channels,
+                                   int count,
+                                   const vsdk::Model& model) -> vsdk::ResourceConfig {
         try {
             vsdk::ProtoStruct attributes;
             attributes.emplace("device_name", device_name);
@@ -44,57 +45,56 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
             std::stringstream name;
             name << device_type << "-" << count;
 
-            return vsdk::ResourceConfig(
-                component_type,
-                name.str(),
-                "viam",                // namespace
-                attributes,
-                api,
-                model,
-                vsdk::log_level::info
-            );
+            return vsdk::ResourceConfig(component_type,
+                                        name.str(),
+                                        "viam",  // namespace
+                                        attributes,
+                                        api,
+                                        model,
+                                        vsdk::log_level::info);
         } catch (std::exception& e) {
             std::stringstream buffer;
-            buffer << "Failed to create resource config for " << device_type
-                   << " device: " << device_name << " : " << e.what();
+            buffer << "Failed to create resource config for " << device_type << " device: " << device_name << " : " << e.what();
             VIAM_SDK_LOG(error) << buffer.str();
             throw std::runtime_error(buffer.str());
         }
     };
 
     auto add_device_config = [&](const vsdk::Model& model,
-                                  const std::string& component_type,
-                                  const std::string& device_type,
-                                  const std::string& api,
-                                  const std::string& device_name,
-                                  double sample_rate,
-                                  int num_channels,
-                                  int& counter) {
+                                 const std::string& component_type,
+                                 const std::string& device_type,
+                                 const std::string& api,
+                                 const std::string& device_name,
+                                 double sample_rate,
+                                 int num_channels,
+                                 int& counter) {
         ++counter;
 
         std::stringstream deviceInfoString;
-        deviceInfoString << "discovered " << device_name
-                         << ", default sample rate: " << sample_rate
-                         << ", max channels: " << num_channels;
+        deviceInfoString << "discovered " << device_name << ", default sample rate: " << sample_rate << ", max channels: " << num_channels;
         VIAM_SDK_LOG(debug) << deviceInfoString.str();
 
-        vsdk::ResourceConfig config = create_device_config(
-            component_type, device_type, api, device_name,
-            sample_rate, num_channels, counter, model
-        );
+        vsdk::ResourceConfig config =
+            create_device_config(component_type, device_type, api, device_name, sample_rate, num_channels, counter, model);
         configs.push_back(config);
     };
     int count_input = 0;
     int count_output = 0;
 
     for (int i = 0; i < numDevices; i++) {
-        const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
+        const PaDeviceInfo* info = pa_ ? pa_->getDeviceInfo(i) : Pa_GetDeviceInfo(i);
         std::string device_name = info->name;
         double sample_rate = info->defaultSampleRate;
 
         if (info->maxInputChannels > 0) {
-            add_device_config(microphone::Microphone::model, "audio_in", "microphone", "rdk:component:audio_in",
-                            device_name, sample_rate, info->maxInputChannels, count_input);
+            add_device_config(microphone::Microphone::model,
+                              "audio_in",
+                              "microphone",
+                              "rdk:component:audio_in",
+                              device_name,
+                              sample_rate,
+                              info->maxInputChannels,
+                              count_input);
         } else if (info->maxOutputChannels > 0) {
             // //TODO: change firm param to speaker model when speaker is in main
             // add_device_config("Speaker", "audio_out", "speaker", "rdk:component:audio_out",
