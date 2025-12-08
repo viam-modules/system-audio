@@ -1,4 +1,4 @@
-name: run unit tests
+name: run linter and unit tests
 
 on:
   push:
@@ -16,6 +16,9 @@ jobs:
     - name: Install dependencies
       run: |
         make setup
+
+    - name: Run linter
+      run : make lint
 
     - name: Run unit tests
       run: make test

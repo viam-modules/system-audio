@@ -131,7 +131,7 @@ protected:
         }
 
         ctx->first_sample_adc_time = 0.0;
-        ctx->stream_start_time = std::chrono::steady_clock::now();
+        ctx->stream_start_time = std::chrono::system_clock::now();
         ctx->first_callback_captured.store(true);
         ctx->total_samples_written.store(0);
 
@@ -331,9 +331,7 @@ TEST_F(MicrophoneTest, GetPropertiesReturnsCorrectValues) {
 
     EXPECT_EQ(props.sample_rate_hz, sample_rate);
     EXPECT_EQ(props.num_channels, num_channels);
-    ASSERT_EQ(props.supported_codecs.size(), 1);
-    EXPECT_EQ(props.supported_codecs[0], viam::sdk::audio_codecs::PCM_16);
-
+    ASSERT_EQ(props.supported_codecs.size(), 4);
 }
 
 TEST_F(MicrophoneTest, ModelExists) {
@@ -696,7 +694,7 @@ TEST_F(MicrophoneTest, MultipleConcurrentGetAudioCalls) {
 
     // Initialize timing
     mic.audio_context_->first_sample_adc_time = 0.0;
-    mic.audio_context_->stream_start_time = std::chrono::steady_clock::now();
+    mic.audio_context_->stream_start_time = std::chrono::system_clock::now();
     mic.audio_context_->first_callback_captured.store(true);
     mic.audio_context_->total_samples_written.store(0);
 
@@ -764,7 +762,7 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
 
     // Initialize timing for timestamp calculation
     ctx->first_sample_adc_time = 0.0;
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
     ctx->total_samples_written.store(0);
 
@@ -803,7 +801,7 @@ TEST_F(MicrophoneTest, GetAudioHandlerCanStopEarly) {
 
     // Initialize timing for timestamp calculation
     mic.audio_context_->first_sample_adc_time = 0.0;
-    mic.audio_context_->stream_start_time = std::chrono::steady_clock::now();
+    mic.audio_context_->stream_start_time = std::chrono::system_clock::now();
     mic.audio_context_->first_callback_captured.store(true);
     mic.audio_context_->total_samples_written.store(0);
 
@@ -920,7 +918,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroNumChannels) {
     info.num_channels = 0;  // Invalid
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, 10);
+        microphone::AudioStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -930,7 +928,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeNumChannels) {
     info.num_channels = -1;  // Invalid
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, 10);
+        microphone::AudioStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -940,7 +938,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroSampleRate) {
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, 10);
+        microphone::AudioStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -950,7 +948,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeSampleRate) {
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, 10);
+        microphone::AudioStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
@@ -960,7 +958,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroBufferDuration) {
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, 0);
+        microphone::AudioStreamContext ctx(info, 0);
     }, std::invalid_argument);
 }
 
@@ -970,7 +968,7 @@ TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeBufferDuration) {
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 4410, -5);
+        microphone::AudioStreamContext ctx(info, -5);
     }, std::invalid_argument);
 }
 
@@ -1008,7 +1006,7 @@ TEST_F(MicrophoneTest, GetAudioThrowsOnTimestampInFuture) {
 
     auto ctx = createTestContext(mic, 48000);  // Write 1 second of audio
 
-    auto future_time = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto future_time = std::chrono::system_clock::now() + std::chrono::seconds(10);
     auto future_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(future_time);
     int64_t future_timestamp_ns = future_ns.time_since_epoch().count();
 
@@ -1082,7 +1080,7 @@ TEST_F(MicrophoneTest, GetAudioSucceedsWithValidTimestamp) {
 TEST(GetInitialReadPosition, ZeroTimestampReturnsCurrentWritePosition) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
     auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
     for (int i = 0; i < 1000; i++) {
@@ -1096,7 +1094,7 @@ TEST(GetInitialReadPosition, ZeroTimestampReturnsCurrentWritePosition) {
 TEST(GetInitialReadPosition, ValidTimestampReturnsCorrectPosition) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
     auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
     // Write 2 seconds of audio (48000 * 2 channels * 2 seconds = 192000 samples)
@@ -1126,7 +1124,7 @@ TEST(GetInitialReadPosition, NullContextThrows) {
 TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
     auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
@@ -1143,7 +1141,7 @@ TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
 TEST(GetInitialReadPosition, TimestampInFutureThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
     auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
     int samples_for_1_second = 48000 * 2;
@@ -1152,7 +1150,7 @@ TEST(GetInitialReadPosition, TimestampInFutureThrows) {
     }
 
     // Request timestamp 10 seconds in the future
-    auto future_time = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    auto future_time = std::chrono::system_clock::now() + std::chrono::seconds(10);
     auto future_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(future_time);
     int64_t future_timestamp_ns = future_ns.time_since_epoch().count();
 
@@ -1163,8 +1161,8 @@ TEST(GetInitialReadPosition, TimestampInFutureThrows) {
 
 TEST(GetInitialReadPosition, TimestampTooOldThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
-    ctx->stream_start_time = std::chrono::steady_clock::now();
+    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 30);
+    ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
     // Buffer holds 30 seconds by default
@@ -1181,6 +1179,200 @@ TEST(GetInitialReadPosition, TimestampTooOldThrows) {
     EXPECT_THROW({
         microphone::get_initial_read_position(ctx, stream_start_timestamp_ns);
     }, std::invalid_argument);
+}
+
+TEST_F(MicrophoneTest, CodecConversion_PCM16) {
+    auto config = createConfig(testDeviceName, 44100, 1);
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic);
+
+    const int samples_per_chunk = 4410;  // 100ms at 44.1kHz
+    const int num_chunks = 2;
+
+    int chunks_received = 0;
+    std::vector<int16_t> received_samples;
+
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
+        chunks_received++;
+        const int16_t* samples = reinterpret_cast<const int16_t*>(chunk.audio_data.data());
+        int num_samples = chunk.audio_data.size() / sizeof(int16_t);
+        received_samples.insert(received_samples.end(), samples, samples + num_samples);
+        return chunks_received < num_chunks;
+    };
+
+    std::thread reader([&]() {
+        mic.get_audio(viam::sdk::audio_codecs::PCM_16, handler, 1.0, 0, ProtoStruct{});
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    for (int i = 0; i < num_chunks * samples_per_chunk; i++) {
+        ctx->write_sample(static_cast<int16_t>(i));
+    }
+
+    reader.join();
+
+    EXPECT_EQ(chunks_received, num_chunks);
+    ASSERT_GE(received_samples.size(), 10);
+    for (int i = 0; i < 10; i++) {
+        EXPECT_EQ(received_samples[i], static_cast<int16_t>(i));
+    }
+}
+
+TEST_F(MicrophoneTest, CodecConversion_PCM32) {
+    auto config = createConfig(testDeviceName, 44100, 1);
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic);
+
+    const int samples_per_chunk = 4410;
+    const int num_chunks = 2;
+
+    int chunks_received = 0;
+    std::vector<int32_t> received_samples;
+
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
+        chunks_received++;
+        EXPECT_EQ(chunk.info.codec, viam::sdk::audio_codecs::PCM_32);
+
+        const int32_t* samples = reinterpret_cast<const int32_t*>(chunk.audio_data.data());
+        int num_samples = chunk.audio_data.size() / sizeof(int32_t);
+        received_samples.insert(received_samples.end(), samples, samples + num_samples);
+        return chunks_received < num_chunks;
+    };
+
+    std::thread reader([&]() {
+        mic.get_audio(viam::sdk::audio_codecs::PCM_32, handler, 1.0, 0, ProtoStruct{});
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    for (int i = 0; i < num_chunks * samples_per_chunk; i++) {
+        ctx->write_sample(static_cast<int16_t>(i));
+    }
+
+    reader.join();
+
+    EXPECT_EQ(chunks_received, num_chunks);
+    ASSERT_EQ(received_samples.size(), samples_per_chunk*num_chunks);
+    for (int i = 0; i < 10; i++) {
+        int32_t expected = static_cast<int32_t>(static_cast<int16_t>(i)) << 16;
+        EXPECT_EQ(received_samples[i], expected);
+    }
+}
+
+TEST_F(MicrophoneTest, CodecConversion_PCM32Float) {
+    auto config = createConfig(testDeviceName, 44100, 1);
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic);
+
+    const int samples_per_chunk = 4410;
+    const int num_chunks = 2;
+
+    int chunks_received = 0;
+    std::vector<float> received_samples;
+
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
+        chunks_received++;
+        EXPECT_EQ(chunk.info.codec, viam::sdk::audio_codecs::PCM_32_FLOAT);
+        const float* samples = reinterpret_cast<const float*>(chunk.audio_data.data());
+        int num_samples = chunk.audio_data.size() / sizeof(float);
+        received_samples.insert(received_samples.end(), samples, samples + num_samples);
+        return chunks_received < num_chunks;
+    };
+
+    std::thread reader([&]() {
+        mic.get_audio(viam::sdk::audio_codecs::PCM_32_FLOAT, handler, 1.0, 0, ProtoStruct{});
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    for (int i = 0; i < num_chunks * samples_per_chunk; i++) {
+        ctx->write_sample(static_cast<int16_t>(i));
+    }
+
+    reader.join();
+
+    EXPECT_EQ(chunks_received, num_chunks);
+    ASSERT_EQ(received_samples.size(), samples_per_chunk*num_chunks);
+    for (int i = 0; i < 10; i++) {
+        float expected = static_cast<float>(static_cast<int16_t>(i)) * microphone::INT16_TO_FLOAT_SCALE;
+        EXPECT_FLOAT_EQ(received_samples[i], expected);
+    }
+}
+
+
+TEST_F(MicrophoneTest, CodecConversion_MP3_ProducesValidData) {
+    auto config = createConfig(testDeviceName, 48000, 1);
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic);
+
+    int chunks_received = 0;
+    int chunks_with_data = 0;
+    size_t total_mp3_bytes = 0;
+
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
+        chunks_received++;
+        EXPECT_EQ(chunk.info.codec, viam::sdk::audio_codecs::MP3);
+        total_mp3_bytes += chunk.audio_data.size();
+        return chunks_received < 10;
+    };
+
+    // Write samples continuously in background thread
+    std::atomic<bool> stop_writing{false};
+    std::thread writer([&]() {
+        for (int i = 0; i < 500000 && !stop_writing.load(); i++) {
+            ctx->write_sample(static_cast<int16_t>(i % 1000));
+        }
+    });
+
+    std::thread reader([&]() {
+        mic.get_audio(viam::sdk::audio_codecs::MP3, handler, 2.0, 0, ProtoStruct{});
+    });
+
+    reader.join();
+    stop_writing = true;
+    writer.join();
+
+    EXPECT_EQ(chunks_received, 10);
+    EXPECT_GT(total_mp3_bytes, 0);
+}
+
+TEST_F(MicrophoneTest, CodecConversion_MP3_Stereo) {
+    auto config = createConfig(testDeviceName, 48000, 2);
+    microphone::Microphone mic(test_deps_, config, mock_pa_.get());
+
+    auto ctx = createTestContext(mic);
+
+    int chunks_received = 0;
+
+    auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
+        chunks_received++;
+        EXPECT_EQ(chunk.info.codec, viam::sdk::audio_codecs::MP3);
+        EXPECT_EQ(chunk.info.num_channels, 2);
+        return chunks_received < 5;
+    };
+
+    // Write samples continuously in background thread
+    std::atomic<bool> stop_writing{false};
+    std::thread writer([&]() {
+        for (int i = 0; i < 500000 && !stop_writing.load(); i++) {
+            ctx->write_sample(static_cast<int16_t>(i % 1000));
+        }
+    });
+
+    std::thread reader([&]() {
+        mic.get_audio(viam::sdk::audio_codecs::MP3, handler, 1.0, 0, ProtoStruct{});
+    });
+
+    reader.join();
+    stop_writing = true;
+    writer.join();
+
+    EXPECT_EQ(chunks_received, 5);
 }
 
 TEST_F(MicrophoneTest, HistoricalDataRespectsDuration) {
