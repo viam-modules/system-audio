@@ -8,7 +8,7 @@ from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.build import can_run
 from conan.tools.files import copy, load
 
-class orbbec(ConanFile):
+class audio(ConanFile):
     name = "viam-audio"
 
     license = "Apache-2.0"
@@ -43,6 +43,7 @@ class orbbec(ConanFile):
         # NOTE: If you update the `viam-cpp-sdk` dependency here, it
         # should also be updated in `bin/setup.{sh,ps1}`.
         self.requires("viam-cpp-sdk/0.21.0")
+        self.requires("libmp3lame/3.100")
 
     def generate(self):
         tc = CMakeToolchain(self)

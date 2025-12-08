@@ -1,20 +1,21 @@
 #pragma once
 
-#include <viam/sdk/components/audio_in.hpp>
-#include <viam/sdk/common/audio.hpp>
-#include "portaudio.h"
-#include <chrono>
-#include <vector>
-#include <mutex>
 #include <atomic>
+#include <chrono>
+#include <mutex>
+#include <vector>
+#include <viam/sdk/common/audio.hpp>
+#include <viam/sdk/components/audio_in.hpp>
+#include "portaudio.h"
 
 namespace microphone {
 
 namespace vsdk = ::viam::sdk;
 
-constexpr int BUFFER_DURATION_SECONDS = 10;  // How much audio history to keep in buffer
-constexpr double CHUNK_DURATION_SECONDS = 0.1;   // 100ms chunks (10 chunks per second)
-
+constexpr int BUFFER_DURATION_SECONDS = 30;     // How much audio history to keep in buffer
+constexpr double CHUNK_DURATION_SECONDS = 0.1;  // 100ms chunks (10 chunks per second)
+constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000ULL;
+constexpr float INT16_TO_FLOAT_SCALE = 1.0f / 32768.0f;  // Scale factor for converting int16 samples to float [-1.0, 1.0]
 
 // AudioStreamContext managers a circular buffer of audio for a single
 // stream.
@@ -25,7 +26,6 @@ struct AudioStreamContext {
     int buffer_capacity;
 
     vsdk::audio_info info;
-    int samples_per_chunk;
 
     std::chrono::system_clock::time_point stream_start_time;
     double first_sample_adc_time;
@@ -33,24 +33,23 @@ struct AudioStreamContext {
 
     std::atomic<uint64_t> total_samples_written;
 
-    AudioStreamContext(const vsdk::audio_info& audio_info,
-                      int samples_per_chunk,
-                      int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
+    AudioStreamContext(const vsdk::audio_info& audio_info, int buffer_duration_seconds = BUFFER_DURATION_SECONDS);
 
     // Writes an audio sample to the audio buffer
-    void write_sample(int16_t sample);
-
+    void write_sample(int16_t sample) noexcept;
 
     // Read sample_count samples from the circular buffer starting at the inputted postion
-    int read_samples(int16_t* buffer, int sample_count, uint64_t& position);
+    int read_samples(int16_t* buffer, int sample_count, uint64_t& position) noexcept;
 
-    uint64_t get_write_position() const;
-
+    uint64_t get_write_position() const noexcept;
+    std::chrono::nanoseconds calculate_sample_timestamp(uint64_t sample_number) noexcept;
+    uint64_t get_sample_number_from_timestamp(int64_t timestamp) noexcept;
 };
 
-std::chrono::nanoseconds calculate_sample_timestamp(
-    const AudioStreamContext* ctx,
-    uint64_t sample_number);
+// Calculate chunk size aligned to MP3 frame boundaries
+// Returns the number of samples (including all channels) for an optimal chunk size
+// mp3_frame_size should be the actual frame size from LAME (1152 or 576), defaults to 1152
+int calculate_aligned_chunk_size(int sample_rate, int num_channels, int mp3_frame_size = 1152);
 
 /**
  * PortAudio callback function - runs on real-time audio thread.
@@ -65,10 +64,11 @@ std::chrono::nanoseconds calculate_sample_timestamp(
  * call library functions or call other functions from the stream callback
  * that may block or take an unpredictable amount of time to complete.
  */
-int AudioCallback(const void *inputBuffer, void *outputBuffer,
+int AudioCallback(const void* inputBuffer,
+                  void* outputBuffer,
                   unsigned long framesPerBuffer,
                   const PaStreamCallbackTimeInfo* timeInfo,
                   PaStreamCallbackFlags statusFlags,
-                  void *userData);
+                  void* userData);
 
-} // namespace microphone
+}  // namespace microphone

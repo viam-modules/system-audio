@@ -1,7 +1,9 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
 
-.PHONY: build lint setup appimage test conan-pkg
+.PHONY: build setup test clean lint
+
+default: module.tar.gz
 
 build: $(BIN)
 
@@ -24,3 +26,6 @@ module.tar.gz: $(BIN) meta.json
 
 setup:
 	bin/setup.sh
+
+lint:
+	./bin/lint.sh

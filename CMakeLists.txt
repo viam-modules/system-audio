@@ -13,11 +13,13 @@ add_executable(audio-module
     src/microphone.cpp
     src/audio_stream.cpp
     src/discovery.cpp
+    src/mp3_encoder.cpp
 )
 
 find_package(viam-cpp-sdk REQUIRED)
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(libmp3lame REQUIRED)
 
 pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
 
@@ -48,6 +50,7 @@ target_link_libraries(audio-module
 PRIVATE Threads::Threads
 PRIVATE viam-cpp-sdk::viamsdk
 PRIVATE ${PORTAUDIO_STATIC_LIB}
+PRIVATE libmp3lame::libmp3lame
 )
 
 # Link platform-specific dependencies
@@ -69,7 +72,9 @@ if(LINUX)
     endif()
 endif()
 
-target_include_directories(audio-module PRIVATE ${PORTAUDIO_INCLUDE_DIRS})
+target_include_directories(audio-module
+    PRIVATE ${PORTAUDIO_INCLUDE_DIRS}
+)
 target_compile_options(audio-module PRIVATE ${PORTAUDIO_CFLAGS_OTHER})
 
 enable_testing()

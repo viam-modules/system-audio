@@ -29,10 +29,12 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
         return {};
     }
 
-    VIAM_SDK_LOG(info) << "Discovery found " << numDevices << "audio devices";
+    VIAM_SDK_LOG(info) << "Discovery found " << numDevices << " audio devices";
 
     bool input;
     bool output;
+    int count_input = 0;
+    int count_output = 0;
     for (int i = 0; i < numDevices; i++) {
           input = false;
           output = false;
@@ -50,34 +52,40 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                 num_output_channels = info->maxOutputChannels;
           }
 
-           if (input) {
+            if (input) {
                 std::stringstream deviceInfoString;
                 deviceInfoString << "Microphone " << (i + 1) << " - Name: " << device_name << ", default sample rate:  " << sample_rate
                                     << ", max channels: " << num_input_channels;
-                VIAM_RESOURCE_LOG(info) << deviceInfoString.str();
-           }
-           if (output) {
-               std::stringstream deviceInfoString;
-                deviceInfoString << "Speaker " << (i + 1) << " - Name: " << device_name << ", default sample rate:  " << sample_rate
-                                    << ", max channels: " << num_output_channels;
-                VIAM_RESOURCE_LOG(info) << deviceInfoString.str();
-           }
-
-            if (input) {
+                VIAM_SDK_LOG(info) << deviceInfoString.str();
                 vsdk::ProtoStruct attributes;
                 attributes.emplace("device_name", device_name);
                 attributes.emplace("sample_rate", sample_rate);
                 attributes.emplace("num_channels", num_input_channels);
 
                 std::stringstream name;
-                name << "microphone-" << i + 1;
+                ++count_input;
+                name << "microphone-" << count_input;
 
+                try {
+                    vsdk::ResourceConfig config(
+                    "audio_in", std::move(name.str()), "viam", attributes, "rdk:component:audio_in", microphone::Microphone::model, vsdk::log_level::info);
+                    configs.push_back(config);
+                 } catch(std::exception& e) {
+                    std::stringstream buffer;
+                    buffer << "Failed to create resource config for input device: " << device_name << " : " << e.what();
+                    VIAM_SDK_LOG(error) << buffer.str();
+                    throw std::runtime_error(buffer.str());
 
-                vsdk::ResourceConfig config(
-                    "audio-in", std::move(name.str()), "viam", attributes, "rdk:component:audio_in", microphone::Microphone::model, vsdk::log_level::info);
-                configs.push_back(config);
+                 }
             }
             if (output) {
+                //TODO: rm when speaker is in
+                continue;
+                std::stringstream deviceInfoString;
+                deviceInfoString << "Speaker " << (i + 1) << " - Name: " << device_name << ", default sample rate:  " << sample_rate
+                                    << ", max channels: " << num_output_channels;
+                VIAM_SDK_LOG(info) << deviceInfoString.str();
+
                 vsdk::ProtoStruct attributes;
                 attributes.emplace("device_name", device_name);
                 attributes.emplace("sample_rate", sample_rate);
@@ -85,10 +93,18 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
 
 
                 std::stringstream name;
-                name << "speaker-" << i + 1;
+                ++count_output;
+                name << "speaker-" << count_output;
+                try {
                     vsdk::ResourceConfig config(
                     "audio-out", std::move(name.str()), "viam", attributes, "rdk:component:audio_out", microphone::Microphone::model, vsdk::log_level::info);
-                configs.push_back(config);
+                    configs.push_back(config);
+                } catch(std::exception& e) {
+                    std::stringstream buffer;
+                    buffer << "Failed to create resource config for output device " << device_name << " : " << e.what();
+                    VIAM_SDK_LOG(error) << buffer.str();
+                    throw std::runtime_error(buffer.str());
+                 }
             }
     }
 
