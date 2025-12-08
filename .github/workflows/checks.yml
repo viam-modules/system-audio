@@ -20,5 +20,17 @@ jobs:
     - name: Run linter
       run : make lint
 
+    - name: Verify no uncommitted changes from "make lint"
+      run: |
+          git init && git add . && make lint
+          GEN_DIFF=$(git status -s)
+          if [ -n "$GEN_DIFF" ]; then
+              echo '"make lint" resulted in the following untracked changes:' 1>&2
+              git diff
+              echo '"make lint" resulted in changes not in git' 1>&2
+              git status
+              exit 1
+          fi
+
     - name: Run unit tests
       run: make test
