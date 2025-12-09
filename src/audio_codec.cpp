@@ -73,42 +73,42 @@ void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uint8_t>& 
     std::memcpy(output.data(), samples, sample_count * sizeof(int16_t));
 }
 
-  // Convert PCM32 to PCM16
-  void convert_pcm32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output) {
-      if (byte_count % 4 != 0) {
-          throw std::invalid_argument("PCM32 data size must be divisible by 4");
-      }
+// Convert PCM32 to PCM16
+void convert_pcm32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output) {
+    if (byte_count % 4 != 0) {
+        throw std::invalid_argument("PCM32 data size must be divisible by 4");
+    }
 
-      int sample_count = byte_count / sizeof(int32_t);
-      output.resize(sample_count * sizeof(int16_t));
+    int sample_count = byte_count / sizeof(int32_t);
+    output.resize(sample_count * sizeof(int16_t));
 
-      const int32_t* input = reinterpret_cast<const int32_t*>(input_data);
-      int16_t* output_samples = reinterpret_cast<int16_t*>(output.data());
+    const int32_t* input = reinterpret_cast<const int32_t*>(input_data);
+    int16_t* output_samples = reinterpret_cast<int16_t*>(output.data());
 
-      for (int i = 0; i < sample_count; i++) {
-          // Right shift by 16 to convert int32 back to int16
-          output_samples[i] = static_cast<int16_t>(input[i] >> 16);
-      }
-  }
+    for (int i = 0; i < sample_count; i++) {
+        // Right shift by 16 to convert int32 back to int16
+        output_samples[i] = static_cast<int16_t>(input[i] >> 16);
+    }
+}
 
 // Convert PCM32_FLOAT to PCM16
-  void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output) {
-      if (byte_count % 4 != 0) {
-          throw std::invalid_argument("Float32 data size must be divisible by 4");
-      }
+void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output) {
+    if (byte_count % 4 != 0) {
+        throw std::invalid_argument("Float32 data size must be divisible by 4");
+    }
 
-      int sample_count = byte_count / sizeof(float);
-      output.resize(sample_count * sizeof(int16_t));
+    int sample_count = byte_count / sizeof(float);
+    output.resize(sample_count * sizeof(int16_t));
 
-      const float* input = reinterpret_cast<const float*>(input_data);
-      int16_t* output_samples = reinterpret_cast<int16_t*>(output.data());
+    const float* input = reinterpret_cast<const float*>(input_data);
+    int16_t* output_samples = reinterpret_cast<int16_t*>(output.data());
 
-      for (int i = 0; i < sample_count; i++) {
-          // Clamp float to [-1.0, 1.0] and scale to int16 range
-          float clamped = std::max(-1.0f, std::min(1.0f, input[i]));
-          output_samples[i] = static_cast<int16_t>(clamped * 32767.0f);
-      }
-  }
+    for (int i = 0; i < sample_count; i++) {
+        // Clamp float to [-1.0, 1.0] and scale to int16 range
+        float clamped = std::max(-1.0f, std::min(1.0f, input[i]));
+        output_samples[i] = static_cast<int16_t>(clamped * 32767.0f);
+    }
+}
 
 void encode_audio_chunk(AudioCodec codec,
                         int16_t* samples,

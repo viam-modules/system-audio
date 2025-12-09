@@ -4,8 +4,8 @@
 #include <sstream>
 #include <string>
 #include <viam/sdk/components/audio_out.hpp>
-#include "portaudio.hpp"
 #include "audio_stream.hpp"
+#include "portaudio.hpp"
 
 namespace audio {
 namespace utils {

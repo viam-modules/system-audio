@@ -6,9 +6,9 @@
 #include <viam/sdk/components/audio_out.hpp>
 #include <viam/sdk/registry/registry.hpp>
 #include "audio_buffer.hpp"
+#include "audio_codec.hpp"
 #include "audio_utils.hpp"
 #include "mp3_decoder.hpp"
-#include "audio_codec.hpp"
 #include "resample.hpp"
 
 namespace speaker {
@@ -136,9 +136,9 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
     VIAM_SDK_LOG(info) << "Play called, adding samples to playback buffer";
 
-    if(!info) {
+    if (!info) {
         VIAM_SDK_LOG(error) << "[Play]: Must specify audio info parameter";
-        throw std::invalid_argument( "[Play]: Must specify audio info parameter");
+        throw std::invalid_argument("[Play]: Must specify audio info parameter");
     }
 
     std::string codec_str = info->codec;
@@ -156,17 +156,14 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         speaker_num_channels = num_channels_;
     }
 
-
-        if(codec != AudioCodec::MP3) {
-
-
-        }
-        if (info->num_channels != num_channels_) {
-            VIAM_SDK_LOG(error) << "Channel count mismatch: speaker is configured for " << num_channels_ << " channels but audio has "
-                                << info->num_channels << " channels";
-            throw std::invalid_argument("Channel count mismatch: speaker has " + std::to_string(num_channels_) +
-                                        " channels but audio has " + std::to_string(info->num_channels) + " channels");
-        }
+    if (codec != AudioCodec::MP3) {
+    }
+    if (info->num_channels != num_channels_) {
+        VIAM_SDK_LOG(error) << "Channel count mismatch: speaker is configured for " << num_channels_ << " channels but audio has "
+                            << info->num_channels << " channels";
+        throw std::invalid_argument("Channel count mismatch: speaker has " + std::to_string(num_channels_) + " channels but audio has " +
+                                    std::to_string(info->num_channels) + " channels");
+    }
 
     std::vector<uint8_t> decoded_data;
 
@@ -193,21 +190,20 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         default:
             // Shouldn't ever get here because it will throw when converting the str to enum,
             // but for safety
-            VIAM_SDK_LOG(error) << "Unsupported codec for playback: "<< codec_str;
+            VIAM_SDK_LOG(error) << "Unsupported codec for playback: " << codec_str;
             throw std::invalid_argument("Unsupported codec for playback");
     }
 
-     if (audio_sample_rate != speaker_sample_rate) {
-            VIAM_SDK_LOG(debug) << "Sample rate mismatch: speaker is configured for " << speaker_sample_rate << "Hz but audio is "
-                                << audio_sample_rate << "Hz, resampling audio";
+    if (audio_sample_rate != speaker_sample_rate) {
+        VIAM_SDK_LOG(debug) << "Sample rate mismatch: speaker is configured for " << speaker_sample_rate << "Hz but audio is "
+                            << audio_sample_rate << "Hz, resampling audio";
 
-            std::vector<uint8_t> resampled_data;
-            resample_audio(audio_sample_rate, speaker_sample_rate, speaker_num_channels, decoded_data, resampled_data);
+        std::vector<uint8_t> resampled_data;
+        resample_audio(audio_sample_rate, speaker_sample_rate, speaker_num_channels, decoded_data, resampled_data);
 
-            // Replace with resampled data
-            decoded_data = std::move(resampled_data);
-        }
-
+        // Replace with resampled data
+        decoded_data = std::move(resampled_data);
+    }
 
     // Convert uint8_t bytes to int16_t samples
     // PCM_16 means each sample is 2 bytes (16 bits)
@@ -260,12 +256,8 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& extra) {
     viam::sdk::audio_properties props;
 
-      props.supported_codecs = {
-      vsdk::audio_codecs::PCM_16,
-      vsdk::audio_codecs::PCM_32,
-      vsdk::audio_codecs::PCM_32_FLOAT,
-      vsdk::audio_codecs::MP3
-  };
+    props.supported_codecs = {
+        vsdk::audio_codecs::PCM_16, vsdk::audio_codecs::PCM_32, vsdk::audio_codecs::PCM_32_FLOAT, vsdk::audio_codecs::MP3};
     std::lock_guard<std::mutex> lock(stream_mu_);
     props.sample_rate_hz = sample_rate_;
     props.num_channels = num_channels_;

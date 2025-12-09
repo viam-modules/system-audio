@@ -31,7 +31,7 @@ void convert_pcm16_to_float32(const int16_t* samples, int sample_count, std::vec
 void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uint8_t>& output);
 
 void convert_pcm32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
-  void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
+void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
 
 // Encode audio chunk based on codec type
 // Dispatches to appropriate encoding function based on codec

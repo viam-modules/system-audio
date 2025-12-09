@@ -2,8 +2,8 @@
 
 #include <lame/lame.h>
 #include <cstdint>
-#include <vector>
 #include <memory>
+#include <vector>
 #include "audio_utils.hpp"
 
 namespace speaker {
@@ -17,14 +17,10 @@ struct MP3DecoderContext {
     int num_channels = 0;
 
     MP3DecoderContext();
-    
-    ~MP3DecoderContext();
 
+    ~MP3DecoderContext();
 };
 
-void decode_mp3_to_pcm16(
-    MP3DecoderContext& ctx,
-    const std::vector<uint8_t>& encoded_data,
-    std::vector<uint8_t>& output_data);
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& encoded_data, std::vector<uint8_t>& output_data);
 
 }  // namespace speaker
