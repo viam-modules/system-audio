@@ -1,3 +1,8 @@
+# If this is changed, need to run
+# docker build -f Dockerfile  -t ghcr.io/viam-modules/audio/viam-audio:0.0.x .
+# docker push ghcr.io/viam-modules/audio/viam-audio:0.0.x
+# and update the version number in .github/workflows/build-publish.yml
+
 FROM ubuntu:jammy
 
 ENV HOME=/root
