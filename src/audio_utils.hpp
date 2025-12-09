@@ -205,7 +205,8 @@ inline void openStream(PaStream*& stream, const StreamParams& params, const audi
     }
 
     VIAM_SDK_LOG(info) << "Opening stream for device '" << params.device_name << "' (index " << params.device_index << ")"
-                       << " with sample rate " << params.sample_rate << " channels: " << params.num_channels << " and latency " << stream_params.suggestedLatency << " seconds";
+                       << " with sample rate " << params.sample_rate << " channels: " << params.num_channels << " and latency "
+                       << stream_params.suggestedLatency << " seconds";
 
     err = audio_interface.openStream(&stream,
                                      inputParams,
