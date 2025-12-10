@@ -22,9 +22,28 @@ function(audio_add_gtest SOURCE_FILE_NAME)
         GTest::gtest_main
         GTest::gmock
         viam-cpp-sdk::viamsdk
-        ${PORTAUDIO_LIBRARIES}
+        ${PORTAUDIO_STATIC_LIB}
         libmp3lame::libmp3lame
     )
+
+    # Link platform-specific dependencies for portaudio
+    if(APPLE)
+        target_link_libraries(${TEST_EXECUTABLE_NAME}
+            ${COREAUDIO_LIBRARY}
+            ${AUDIOTOOLBOX_LIBRARY}
+            ${AUDIOUNIT_LIBRARY}
+            ${COREFOUNDATION_LIBRARY}
+            ${CORESERVICES_LIBRARY}
+        )
+    endif()
+
+    if(LINUX)
+        target_link_libraries(${TEST_EXECUTABLE_NAME} ALSA::ALSA)
+        if(JACK_FOUND)
+            target_link_libraries(${TEST_EXECUTABLE_NAME} ${JACK_LIBRARIES})
+            target_link_directories(${TEST_EXECUTABLE_NAME} PRIVATE ${JACK_LIBRARY_DIRS})
+        endif()
+    endif()
 
     target_include_directories(${TEST_EXECUTABLE_NAME} PRIVATE
         ${PORTAUDIO_INCLUDE_DIRS}

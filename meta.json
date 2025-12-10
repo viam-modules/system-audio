@@ -12,5 +12,11 @@
       "short_description": "captures audio from system microphones"
     }
   ],
+   "build": {
+       "setup": "make setup",
+       "build": "make module.tar.gz",
+       "path" : "module.tar.gz",
+       "arch" : ["linux/amd64", "linux/arm64", "darwin/arm64"]
+    },
   "entrypoint": "audio-module"
 }

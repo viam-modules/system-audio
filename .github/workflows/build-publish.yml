@@ -1,0 +1,88 @@
+name: Build & publish module to registry
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            os: ubuntu-latest
+            container:
+              image: ghcr.io/viamrobotics/rdk-devenv:amd64
+              options: --platform linux/amd64
+            artifact-name: module-linux-amd64
+          - platform: darwin/arm64
+            os: macos-latest
+            artifact-name: module-darwin-arm64
+          - platform: linux/arm64
+            os: buildjet-8vcpu-ubuntu-2204-arm
+            container:
+              image: ghcr.io/viam-modules/audio/viam-audio:0.0.2
+            artifact-name: module-linux-arm64
+
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          make setup
+
+      - name: Build module
+        run: |
+          make module.tar.gz
+
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: module.tar.gz
+
+  publish:
+    needs: build
+    # Only publish to registry if a release
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/viamrobotics/rdk-devenv:amd64
+      options: --platform linux/amd64
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            artifact-name: module-linux-amd64
+            artifact-path: ./artifacts/linux-amd64/
+          - platform: darwin/arm64
+            artifact-name: module-darwin-arm64
+            artifact-path: ./artifacts/darwin-arm64/
+          - platform: linux/arm64
+            artifact-name: module-linux-arm64
+            artifact-path: ./artifacts/linux-arm64/
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download module
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
+
+      - name: Upload module to registry
+        uses: viamrobotics/upload-module@v1
+        with:
+          meta-path: meta.json
+          module-path: ${{ matrix.artifact-path }}/module.tar.gz
+          platform: ${{ matrix.platform }}
+          version: ${{ github.ref_name }}
+          key-id: ${{ secrets.VIAM_DEV_API_KEY_ID }}
+          key-value: ${{ secrets.VIAM_DEV_API_KEY }}

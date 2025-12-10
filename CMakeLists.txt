@@ -76,5 +76,8 @@ target_include_directories(audio-module
 )
 target_compile_options(audio-module PRIVATE ${PORTAUDIO_CFLAGS_OTHER})
 
+install(TARGETS audio-module DESTINATION .)
+install(FILES meta.json DESTINATION .)
+
 enable_testing()
 add_subdirectory(test)
