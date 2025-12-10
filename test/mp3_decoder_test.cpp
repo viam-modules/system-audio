@@ -69,7 +69,6 @@ TEST_F(MP3DecoderTest, DecodeMonoMP3) {
     // Verify we got some decoded data
     EXPECT_FALSE(decoded_data.empty());
 
-    // Verify the size is reasonable (should be approximately the same as input)
     int decoded_samples = decoded_data.size() / sizeof(int16_t);
     EXPECT_GT(decoded_samples, 0);
 }
@@ -82,16 +81,13 @@ TEST_F(MP3DecoderTest, DecodeStereoMP3) {
     auto test_samples = create_test_samples(1152 * 2);
     auto encoded_data = encode_to_mp3(test_samples, sample_rate, num_channels);
 
-    // Decode
     std::vector<uint8_t> decoded_data;
 
     ASSERT_NO_THROW(decode_mp3_to_pcm16(*decoder_ctx_, encoded_data, decoded_data));
 
-    // Verify decoder populated audio properties
     EXPECT_EQ(decoder_ctx_->sample_rate, sample_rate);
     EXPECT_EQ(decoder_ctx_->num_channels, num_channels);
 
-    // Verify we got some decoded data
     EXPECT_FALSE(decoded_data.empty());
 }
 
