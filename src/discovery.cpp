@@ -27,7 +27,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
         return {};
     }
 
-    VIAM_SDK_LOG(info) << "Discovery found " << numDevices << " audio devices";
+    VIAM_RESOURCE_LOG(info) << "Discovery found " << numDevices << " audio devices";
 
     // Helper lambda to create device configs
     auto create_device_config = [](const std::string& component_type,
@@ -57,7 +57,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
         } catch (std::exception& e) {
             std::stringstream buffer;
             buffer << "Failed to create resource config for " << device_type << " device: " << device_name << " : " << e.what();
-            VIAM_SDK_LOG(error) << buffer.str();
+            VIAM_RESOURCE_LOG(error) << buffer.str();
             throw std::runtime_error(buffer.str());
         }
     };
@@ -74,7 +74,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
 
         std::stringstream deviceInfoString;
         deviceInfoString << "discovered " << device_name << ", default sample rate: " << sample_rate << ", max channels: " << num_channels;
-        VIAM_SDK_LOG(debug) << deviceInfoString.str();
+        VIAM_RESOURCE_LOG(debug) << deviceInfoString.str();
 
         vsdk::ResourceConfig config =
             create_device_config(component_type, device_type, api, device_name, sample_rate, num_channels, counter, model);
