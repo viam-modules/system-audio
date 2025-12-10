@@ -251,7 +251,6 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             num_channels_ = setup.stream_params.num_channels;
             latency_ = setup.stream_params.latency_seconds;
             audio_context_ = setup.audio_context;
-
         }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
     } catch (const std::exception& e) {

@@ -78,7 +78,7 @@ inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) 
 
     VIAM_SDK_LOG(debug) << "[parseConfigAttributes] sucessfully parsed config attributes";
 
-        return params;
+    return params;
 }
 
 // Shared setup function that works for both microphone and speaker
