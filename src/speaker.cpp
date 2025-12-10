@@ -162,7 +162,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     }
 
     const int16_t* samples = reinterpret_cast<const int16_t*>(audio_data.data());
-    size_t num_samples = audio_data.size() / sizeof(int16_t);
+    const size_t num_samples = audio_data.size() / sizeof(int16_t);
 
     VIAM_SDK_LOG(debug) << "Playing " << num_samples << " samples (" << audio_data.size() << " bytes)";
 
@@ -182,8 +182,6 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             audio_context_->write_sample(samples[i]);
         }
     }
-
-    uint64_t end_position = start_position + num_samples;
 
     // Block until playback position catches up
     VIAM_SDK_LOG(debug) << "Waiting for playback to complete...";
@@ -225,12 +223,12 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
         {
             std::lock_guard<std::mutex> lock(stream_mu_);
             if (audio_context_) {
-                uint64_t write_pos = audio_context_->get_write_position();
-                uint64_t playback_pos = audio_context_->playback_position.load();
+                const uint64_t write_pos = audio_context_->get_write_position();
+                const uint64_t playback_pos = audio_context_->playback_position.load();
 
                 if (write_pos > playback_pos) {
-                    uint64_t unplayed_samples = write_pos - playback_pos;
-                    double unplayed_seconds =
+                    const uint64_t unplayed_samples = write_pos - playback_pos;
+                    const double unplayed_seconds =
                         static_cast<double>(unplayed_samples) / (audio_context_->info.sample_rate_hz * audio_context_->info.num_channels);
                     VIAM_SDK_LOG(warn) << "[reconfigure] Discarding " << unplayed_seconds << " seconds of unplayed audio";
                 }
