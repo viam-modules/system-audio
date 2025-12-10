@@ -6,11 +6,18 @@ This [Viam module](https://docs.viam.com/registry/) provides audio input and out
 
 All audio data uses **little-endian** byte order. The specific format depends on the codec requested:
 
-** supported codecs:**
+**Supported codecs:**
 - `PCM_16`: 16-bit signed integer PCM (range: -32768 to 32767)
 - `PCM_32`: 32-bit signed integer PCM (range: -2147483648 to 2147483647)
 - `PCM_32_FLOAT`: 32-bit floating point PCM (range: -1.0 to 1.0)
 - `MP3`: MP3 compressed audio
+
+**All audio data is in interleaved format** - multi-channel samples are stored sequentially:
+- **Mono (1 channel)**: `[S0, S1, S2, ...]`
+- **Stereo (2 channels)**: `[L0, R0, L1, R1, L2, R2, ...]` (left and right samples alternate)
+
+- **Microphone (`get_audio`)**: Returns audio data in interleaved format
+- **Speaker (`play`)**: Expects audio data in interleaved format
 
 ## Supported Platforms
 - **Darwin ARM64**
