@@ -62,8 +62,5 @@ audio_add_gtest(audio_stream_test.cpp)
 audio_add_gtest(speaker_test.cpp)
 audio_add_gtest(audio_utils_test.cpp)
 audio_add_gtest(mp3_encoder_test.cpp)
-<<<<<<< HEAD
 audio_add_gtest(mp3_decoder_test.cpp)
-=======
->>>>>>> main
 audio_add_gtest(audio_buffer_test.cpp)
