@@ -5,23 +5,6 @@
 
 namespace speaker {
 
-// Helper to skip ID3v2 tags at the beginning of MP3 data
-static size_t skip_id3v2_tag(const std::vector<uint8_t>& data) {
-    // Check for ID3v2 tag (starts with "ID3")
-    if (data.size() < 10 || data[0] != 'I' || data[1] != 'D' || data[2] != '3') {
-        return 0;  // No ID3 tag
-    }
-
-    // ID3v2 size is stored in bytes 6-9 as a synchsafe integer (28 bits)
-    // Each byte uses only 7 bits, MSB is always 0
-    size_t tag_size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F);
-
-    // Total size is tag_size + 10 byte header
-    size_t total_size = tag_size + 10;
-
-    VIAM_SDK_LOG(debug) << "Skipping ID3v2 tag: " << total_size << " bytes";
-    return total_size;
-}
 
 MP3DecoderContext::MP3DecoderContext() : sample_rate(0), num_channels(0) {
     CleanupPtr<hip_decode_exit> hip(hip_decode_init());
@@ -94,26 +77,20 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
         return;
     }
 
-    // Skip ID3 tag if present
-    size_t offset = skip_id3v2_tag(encoded_data);
-    if (offset >= encoded_data.size()) {
-        VIAM_SDK_LOG(error) << "MP3 data contains only ID3 tag, no audio frames";
-        throw std::runtime_error("No MP3 audio data found, contains only ID3 tag");
-    }
 
-    VIAM_SDK_LOG(debug) << "Decoding " << (encoded_data.size() - offset) << " bytes of MP3 data (offset: " << offset << ")";
+    VIAM_SDK_LOG(debug) << "Decoding " << (encoded_data.size()) << " bytes of MP3 data";
 
     // Buffers for decoded PCM samples - one MP3 frame is max 1152 samples
-    const size_t FRAME_BUFFER_SIZE = 1152;  // Samples per channel
-    std::vector<int16_t> pcm_left(FRAME_BUFFER_SIZE);
-    std::vector<int16_t> pcm_right(FRAME_BUFFER_SIZE);
+    const size_t frame_buffer_size = 1152;  // Samples per channel
+    std::vector<int16_t> pcm_left(frame_buffer_size);
+    std::vector<int16_t> pcm_right(frame_buffer_size);
 
     mp3data_struct mp3data;
     memset(&mp3data, 0, sizeof(mp3data));
 
     std::vector<uint8_t> mutable_data(encoded_data.begin(), encoded_data.end());
-    unsigned char* encoded_data_ptr = mutable_data.data() + offset;
-    size_t mp3_data_length = mutable_data.size() - offset;
+    unsigned char* encoded_data_ptr = mutable_data.data();
+    const size_t mp3_data_length = mutable_data.size();
     int frames_decoded = 0;
 
     // Decode frame by frame using hip_decode1_headers (returns at most one frame per call)
