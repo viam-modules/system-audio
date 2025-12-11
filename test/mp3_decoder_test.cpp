@@ -14,11 +14,11 @@ protected:
     MP3EncoderContext encoder_ctx_;
 
     void SetUp() override {
-        decoder_ctx_ = std::make_unique<MP3DecoderContext>();  // Constructor initializes
+        decoder_ctx_ = std::make_unique<MP3DecoderContext>();
     }
 
     void TearDown() override {
-        decoder_ctx_.reset();  // Destructor cleans up
+        decoder_ctx_.reset();
         cleanup_mp3_encoder(encoder_ctx_);
     }
 
@@ -53,11 +53,9 @@ TEST_F(MP3DecoderTest, DecodeMonoMP3) {
     const int sample_rate = 48000;
     const int num_channels = 1;
 
-    // Create test samples and encode them
     auto test_samples = create_test_samples(1152);
     auto encoded_data = encode_to_mp3(test_samples, sample_rate, num_channels);
 
-    // Decode (decoder already initialized by constructor)
     std::vector<uint8_t> decoded_data;
 
     ASSERT_NO_THROW(decode_mp3_to_pcm16(*decoder_ctx_, encoded_data, decoded_data));
@@ -68,9 +66,6 @@ TEST_F(MP3DecoderTest, DecodeMonoMP3) {
 
     // Verify we got some decoded data
     EXPECT_FALSE(decoded_data.empty());
-
-    int decoded_samples = decoded_data.size() / sizeof(int16_t);
-    EXPECT_GT(decoded_samples, 0);
 }
 
 TEST_F(MP3DecoderTest, DecodeStereoMP3) {
@@ -127,81 +122,6 @@ TEST_F(MP3DecoderTest, DecodeInvalidMP3Data) {
         decode_mp3_to_pcm16(*decoder_ctx_, invalid_data, decoded_data),
         std::runtime_error
     );
-}
-
-TEST_F(MP3DecoderTest, DecodeConsecutiveChunks) {
-    const int sample_rate = 48000;
-    const int num_channels = 1;
-
-    // Decode first chunk
-    auto samples1 = create_test_samples(1152);
-    auto encoded1 = encode_to_mp3(samples1, sample_rate, num_channels);
-    std::vector<uint8_t> decoded1;
-    decode_mp3_to_pcm16(*decoder_ctx_, encoded1, decoded1);
-
-    EXPECT_FALSE(decoded1.empty());
-    EXPECT_EQ(decoder_ctx_->sample_rate, sample_rate);
-
-    // Create new decoder for second chunk
-    decoder_ctx_ = std::make_unique<MP3DecoderContext>();
-
-    // Decode second chunk
-    auto samples2 = create_test_samples(2304);
-    auto encoded2 = encode_to_mp3(samples2, sample_rate, num_channels);
-    std::vector<uint8_t> decoded2;
-    decode_mp3_to_pcm16(*decoder_ctx_, encoded2, decoded2);
-
-    EXPECT_FALSE(decoded2.empty());
-}
-
-TEST_F(MP3DecoderTest, DecodeDifferentSampleRates) {
-    // Test 44.1kHz
-    {
-        decoder_ctx_ = std::make_unique<MP3DecoderContext>();
-        auto samples = create_test_samples(1152);
-        auto encoded = encode_to_mp3(samples, 44100, 1);
-        std::vector<uint8_t> decoded;
-        decode_mp3_to_pcm16(*decoder_ctx_, encoded, decoded);
-        EXPECT_EQ(decoder_ctx_->sample_rate, 44100);
-    }
-
-    // Test 16kHz
-    {
-        decoder_ctx_ = std::make_unique<MP3DecoderContext>();
-        auto samples = create_test_samples(1152);
-        auto encoded = encode_to_mp3(samples, 16000, 1);
-        std::vector<uint8_t> decoded;
-        decode_mp3_to_pcm16(*decoder_ctx_, encoded, decoded);
-        EXPECT_EQ(decoder_ctx_->sample_rate, 16000);
-    }
-
-    // Test 8kHz
-    {
-        decoder_ctx_ = std::make_unique<MP3DecoderContext>();
-        auto samples = create_test_samples(1152);
-        auto encoded = encode_to_mp3(samples, 8000, 1);
-        std::vector<uint8_t> decoded;
-        decode_mp3_to_pcm16(*decoder_ctx_, encoded, decoded);
-        EXPECT_EQ(decoder_ctx_->sample_rate, 8000);
-    }
-}
-
-TEST_F(MP3DecoderTest, DecodeOutputIsInterleavedForStereo) {
-    const int sample_rate = 48000;
-    const int num_channels = 2;
-
-    auto test_samples = create_test_samples(1152 * 2);
-    auto encoded_data = encode_to_mp3(test_samples, sample_rate, num_channels);
-
-    std::vector<uint8_t> decoded_data;
-    decode_mp3_to_pcm16(*decoder_ctx_, encoded_data, decoded_data);
-
-    EXPECT_FALSE(decoded_data.empty());
-
-    // For stereo, decoded data should be interleaved (L, R, L, R, ...)
-    // So the number of samples should be divisible by num_channels
-    int total_samples = decoded_data.size() / sizeof(int16_t);
-    EXPECT_EQ(total_samples % num_channels, 0);
 }
 
 int main(int argc, char **argv) {

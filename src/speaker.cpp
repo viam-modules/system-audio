@@ -156,7 +156,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
                    const viam::sdk::ProtoStruct& extra) {
     std::lock_guard<std::mutex> playback_lock(playback_mu_);
 
-    VIAM_SDK_LOG(debugs) << "Play called, adding samples to playback buffer";
+    VIAM_SDK_LOG(debug) << "Play called, adding samples to playback buffer";
 
     if (!info) {
         VIAM_SDK_LOG(error) << "[Play]: Must specify audio info parameter";
@@ -167,25 +167,6 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
     // Parse codec string to enum
     const AudioCodec codec = audio::codec::parse_codec(codec_str);
-
-    // Validate sample rate and channels match speaker configuration
-    {
-        std::lock_guard<std::mutex> lock(stream_mu_);
-        if (codec != AudioCodec::MP3) {
-            if (info->sample_rate_hz != sample_rate_) {
-                VIAM_SDK_LOG(error) << "Sample rate mismatch: speaker is configured for " << sample_rate_ << "Hz but audio is "
-                                    << info->sample_rate_hz << "Hz";
-                throw std::invalid_argument("Sample rate mismatch: speaker is " + std::to_string(sample_rate_) + "Hz but audio is " +
-                                            std::to_string(info->sample_rate_hz) + "Hz");
-            }
-            if (info->num_channels != num_channels_) {
-                VIAM_SDK_LOG(error) << "Channel count mismatch: speaker is configured for " << num_channels_ << " channels but audio has "
-                                    << info->num_channels << " channels";
-                throw std::invalid_argument("Channel count mismatch: speaker has " + std::to_string(num_channels_) +
-                                            " channels but audio has " + std::to_string(info->num_channels) + " channels");
-            }
-        }
-    }
 
     std::vector<uint8_t> decoded_data;
     int audio_sample_rate = info->sample_rate_hz;
@@ -231,8 +212,6 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
                                         " channels, decoded audio=" + std::to_string(audio_num_channels) + " channels");
         }
     }
-
-    VIAM_SDK_LOG(debug) << "validated decoded data size";
 
     // Convert uint8_t bytes to int16_t samples
     // PCM_16 means each sample is 2 bytes (16 bits)
