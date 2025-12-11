@@ -1,3 +1,5 @@
+#pragma once
+
 #include "portaudio.h"
 
 namespace audio {
@@ -89,6 +91,49 @@ class RealPortAudio : public PortAudioInterface {
         return Pa_IsFormatSupported(inputParameters, outputParameters, sampleRate);
     }
 };
+
+inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr) {
+    // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
+    audio::portaudio::RealPortAudio real_pa;
+    const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+
+    PaError err = audio_interface.initialize();
+    if (err != 0) {
+        std::ostringstream buffer;
+        buffer << "Failed to initialize PortAudio library: " << Pa_GetErrorText(err);
+        VIAM_SDK_LOG(error) << "[startPortAudio] " << buffer.str();
+        throw std::runtime_error(buffer.str());
+    }
+
+    int numDevices = Pa_GetDeviceCount();
+    VIAM_SDK_LOG(info) << "Available input devices:";
+
+    for (int i = 0; i < numDevices; i++) {
+        const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
+        if (!info) {
+            VIAM_SDK_LOG(error) << "failed to get device info for " << i + 1 << "th device";
+            continue;
+        }
+        if (info->maxInputChannels > 0) {
+            VIAM_SDK_LOG(info) << info->name << " default sample rate: " << info->defaultSampleRate
+                               << " max input channels: " << info->maxInputChannels;
+        }
+    }
+
+    VIAM_SDK_LOG(info) << "Available output devices:";
+
+    for (int i = 0; i < numDevices; i++) {
+        const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
+        if (!info) {
+            VIAM_SDK_LOG(error) << "failed to get device info for " << i + 1 << "th device";
+            continue;
+        }
+        if (info->maxOutputChannels > 0) {
+            VIAM_SDK_LOG(info) << info->name << " default sample rate: " << info->defaultSampleRate
+                               << " max input channels: " << info->maxOutputChannels;
+        }
+    }
+}
 
 }  // namespace portaudio
 }  // namespace audio

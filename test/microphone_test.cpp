@@ -1,77 +1,15 @@
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
-#include <viam/sdk/common/instance.hpp>
 #include <viam/sdk/config/resource.hpp>
 #include <portaudio.h>
 #include <viam/sdk/common/audio.hpp>
 #include "microphone.hpp"
+#include "test_utils.hpp"
 #include <thread>
-
-class MicrophoneTestEnvironment : public ::testing::Environment {
-public:
-  void SetUp() override { instance_ = std::make_unique<viam::sdk::Instance>(); }
-
-  void TearDown() override { instance_.reset(); }
-
-private:
-  std::unique_ptr<viam::sdk::Instance> instance_;
-};
-
 
 using namespace viam::sdk;
 using namespace audio;
 
-
-// Mock PortAudio interface
-class MockPortAudio : public audio::portaudio::PortAudioInterface {
-public:
-      MOCK_METHOD(PaError, initialize, (), (const, override));
-      MOCK_METHOD(PaDeviceIndex, getDefaultInputDevice, (), (const, override));
-      MOCK_METHOD(PaDeviceIndex, getDefaultOutputDevice, (), (const, override));
-      MOCK_METHOD(const PaDeviceInfo*, getDeviceInfo, (PaDeviceIndex device), (const, override));
-      MOCK_METHOD(PaError, openStream, (PaStream** stream, const PaStreamParameters* inputParameters,
-                                        const PaStreamParameters* outputParameters, double sampleRate,
-                                        unsigned long framesPerBuffer, PaStreamFlags streamFlags,
-                                        PaStreamCallback* streamCallback, void* userData), (const, override));
-      MOCK_METHOD(PaError, startStream, (PaStream* stream), (const, override));
-      MOCK_METHOD(PaError, terminate, (), (const, override));
-      MOCK_METHOD(PaError, stopStream, (PaStream* stream), (const, override));
-      MOCK_METHOD(PaError, closeStream, (PaStream* stream), (const, override));
-      MOCK_METHOD(PaDeviceIndex, getDeviceCount, (), (const, override));
-      MOCK_METHOD(PaStreamInfo*, getStreamInfo, (PaStream* stream), (const, override));
-      MOCK_METHOD(PaError, isFormatSupported, (const PaStreamParameters* inputParameters,
-                                               const PaStreamParameters* outputParameters,
-                                               double sampleRate), (const, override));
-  };
-
-// Base test fixture with common PortAudio mock setup
-// All audio tests inherit from this for consistency
-class AudioTestBase : public ::testing::Test {
-protected:
-    void SetUp() override {
-        mock_pa_ = std::make_unique<::testing::NiceMock<MockPortAudio>>();
-
-        // Setup mock device info with common defaults
-        mock_device_info_.defaultLowInputLatency = 0.01;
-        mock_device_info_.defaultLowOutputLatency = 0.01;
-        mock_device_info_.defaultSampleRate = 44100.0;
-        mock_device_info_.maxInputChannels = 2;
-        mock_device_info_.maxOutputChannels = 0;
-        mock_device_info_.name = testDeviceName;
-    }
-
-    void TearDown() override {
-        mock_pa_.reset();
-    }
-
-    // Common test device name used across all tests
-    static constexpr const char* testDeviceName = "Test Device";
-
-    std::unique_ptr<::testing::NiceMock<MockPortAudio>> mock_pa_;
-    PaDeviceInfo mock_device_info_;
-};
-
-class MicrophoneTest : public AudioTestBase {
+class MicrophoneTest : public test_utils::AudioTestBase {
 protected:
     void SetUp() override {
         AudioTestBase::SetUp();
@@ -85,8 +23,6 @@ protected:
             "rdk:component:audioin", "", test_name_, attributes, "",
             Model("viam", "audio", "microphone"), LinkConfig{}, log_level::info
         );
-
-        SetupDefaultPortAudioBehavior();
     }
     ResourceConfig createConfig(const std::string& device_name = testDeviceName,
                                 int sample_rate = 44100,
@@ -122,9 +58,9 @@ protected:
     }
 
     // Helper: Create audio context with test data
-    std::shared_ptr<microphone::AudioStreamContext> createTestContext(microphone::Microphone& mic,
+    std::shared_ptr<audio::InputStreamContext> createTestContext(microphone::Microphone& mic,
                                                                        int num_samples = 0) {
-        std::shared_ptr<microphone::AudioStreamContext> ctx;
+        std::shared_ptr<audio::InputStreamContext> ctx;
         {
             std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
             ctx = mic.audio_context_;
@@ -133,7 +69,7 @@ protected:
         ctx->first_sample_adc_time = 0.0;
         ctx->stream_start_time = std::chrono::system_clock::now();
         ctx->first_callback_captured.store(true);
-        ctx->total_samples_written.store(0);
+        test_utils::ClearAudioBuffer(*ctx);
 
         // Optionally write samples
         for (int i = 0; i < num_samples; i++) {
@@ -692,11 +628,7 @@ TEST_F(MicrophoneTest, MultipleConcurrentGetAudioCalls) {
     auto config = createConfig(testDeviceName, 44100, 2);
     microphone::Microphone mic(test_deps_, config, mock_pa_.get());
 
-    // Initialize timing
-    mic.audio_context_->first_sample_adc_time = 0.0;
-    mic.audio_context_->stream_start_time = std::chrono::system_clock::now();
-    mic.audio_context_->first_callback_captured.store(true);
-    mic.audio_context_->total_samples_written.store(0);
+    auto ctx = createTestContext(mic, 0);
 
     // Write samples in background
     std::atomic<bool> stop_writing{false};
@@ -749,22 +681,11 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
 
     PaStream* dummy_stream = reinterpret_cast<PaStream*>(0x1234);
 
-
-    std::shared_ptr<microphone::AudioStreamContext> ctx;
-    {
-        std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
-        ctx = mic.audio_context_;
-    }
-
     // Each chunk is 100ms = 4410 samples at 44.1kHz mono
     const int samples_per_chunk = 4410;
     const int num_chunks = 5;
 
-    // Initialize timing for timestamp calculation
-    ctx->first_sample_adc_time = 0.0;
-    ctx->stream_start_time = std::chrono::system_clock::now();
-    ctx->first_callback_captured.store(true);
-    ctx->total_samples_written.store(0);
+     mic.audio_context_ = createTestContext(mic, 0);
 
     int chunks_received = 0;
     auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
@@ -781,7 +702,7 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
      for (int i = 0; i < num_chunks * samples_per_chunk; i++) {
-        ctx->write_sample(static_cast<int16_t>(i));
+        mic.audio_context_->write_sample(static_cast<int16_t>(i));
      }
 
     reader.join();
@@ -800,10 +721,7 @@ TEST_F(MicrophoneTest, GetAudioHandlerCanStopEarly) {
     const int total_chunks = 10;
 
     // Initialize timing for timestamp calculation
-    mic.audio_context_->first_sample_adc_time = 0.0;
-    mic.audio_context_->stream_start_time = std::chrono::system_clock::now();
-    mic.audio_context_->first_callback_captured.store(true);
-    mic.audio_context_->total_samples_written.store(0);
+    mic.audio_context_ = createTestContext(mic, 0);
 
     // Simulate real-time audio: write samples in background thread
     std::atomic<bool> stop_writing{false};
@@ -845,130 +763,65 @@ TEST_F(MicrophoneTest, GetAudioWithInvalidCodecThrowsError) {
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, TestOpenStreamSuccessDefaultDevice) {
-    auto config = createConfig(testDeviceName, 44100, 2);
-    expectSuccessfulStreamCreation();
 
-    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
-    PaStream* stream = nullptr;
-
-    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paNoError));
-    EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                      static_cast<double>(44100),
-                                      ::testing::_, ::testing::_,
-                                      ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paNoError));
-    EXPECT_NO_THROW(mic.openStream(&stream));
-}
-
-
-TEST_F(MicrophoneTest, TestOpenStreamSuccessSpecificDevice) {
-    const char* deviceName = "test_device";
-    mock_device_info_.name = deviceName;
-    mock_device_info_.maxInputChannels = 2;
-
-    auto config = createConfig(deviceName, 48000, 2);
-    expectSuccessfulStreamCreation();
-    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
-    PaStream* stream = nullptr;
-    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paNoError));
-    EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                    static_cast<double>(48000),
-                                    ::testing::_, ::testing::_,
-                                    ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paNoError));
-    EXPECT_NO_THROW(mic.openStream(&stream));
-}
-
-
-TEST_F(MicrophoneTest, TestOpenStreamFormatNotSupported) {
-    auto config = createConfig(testDeviceName, 44100, 2);
-    expectSuccessfulStreamCreation();
-
-    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
-
-    // Test that OpenStream throws when format is not supported
-    PaStream* stream = nullptr;
-    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paInvalidDevice));
-    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
-}
-
-TEST_F(MicrophoneTest, TestOpenStreamFails) {
-    auto config = createConfig(testDeviceName, 44100, 2);
-    expectSuccessfulStreamCreation();
-
-    microphone::Microphone mic(Dependencies{}, config, mock_pa_.get());
-    PaStream* stream = nullptr;
-    EXPECT_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paNoError));
-    EXPECT_CALL(*mock_pa_, openStream(::testing::_, ::testing::_, ::testing::_,
-                                    ::testing::_, ::testing::_, ::testing::_,
-                                    ::testing::_, ::testing::_))
-        .WillOnce(::testing::Return(paInvalidDevice));
-    EXPECT_THROW(mic.openStream(&stream), std::runtime_error);
-}
-
-// AudioStreamContext validation tests
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroNumChannels) {
+// InputStreamContext validation tests
+TEST_F(MicrophoneTest, InputStreamCOntextThrowsOnZeroNumChannels) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = 44100;
     info.num_channels = 0;  // Invalid
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 10);
+     audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeNumChannels) {
+TEST_F(MicrophoneTest, InputStreamCOntextThrowsOnNegativeNumChannels) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = 44100;
     info.num_channels = -1;  // Invalid
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 10);
+     audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroSampleRate) {
+TEST_F(MicrophoneTest, InputStreamContextThrowsOnZeroSampleRate) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = 0;  // Invalid
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 10);
+     audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeSampleRate) {
+TEST_F(MicrophoneTest, InputStreamContextThrowsOnNegativeSampleRate) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = -44100;  // Invalid
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 10);
+     audio::InputStreamContext ctx(info, 10);
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnZeroBufferDuration) {
+TEST_F(MicrophoneTest, InputStreamContextThrowsOnZeroBufferDuration) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = 44100;
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, 0);
+     audio::InputStreamContext ctx(info, 0);
     }, std::invalid_argument);
 }
 
-TEST_F(MicrophoneTest, AudioStreamContextThrowsOnNegativeBufferDuration) {
+TEST_F(MicrophoneTest, InputStreamContextThrowsOnNegativeBufferDuration) {
     viam::sdk::audio_info info;
     info.sample_rate_hz = 44100;
     info.num_channels = 2;
 
     EXPECT_THROW({
-        microphone::AudioStreamContext ctx(info, -5);
+     audio::InputStreamContext ctx(info, -5);
     }, std::invalid_argument);
 }
 
@@ -1079,7 +932,7 @@ TEST_F(MicrophoneTest, GetAudioSucceedsWithValidTimestamp) {
 
 TEST(GetInitialReadPosition, ZeroTimestampReturnsCurrentWritePosition) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
+    auto ctx = std::make_shared<audio::InputStreamContext>(info, 4800);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
@@ -1093,7 +946,7 @@ TEST(GetInitialReadPosition, ZeroTimestampReturnsCurrentWritePosition) {
 
 TEST(GetInitialReadPosition, ValidTimestampReturnsCorrectPosition) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
+    auto ctx = std::make_shared<audio::InputStreamContext>(info, 4800);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
@@ -1106,7 +959,7 @@ TEST(GetInitialReadPosition, ValidTimestampReturnsCorrectPosition) {
     // Get timestamp for 1 second into the stream
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
-    int64_t one_second_later = stream_start_timestamp_ns + microphone::NANOSECONDS_PER_SECOND;
+    int64_t one_second_later = stream_start_timestamp_ns + NANOSECONDS_PER_SECOND;
 
     uint64_t read_pos = microphone::get_initial_read_position(ctx, one_second_later);
 
@@ -1123,7 +976,7 @@ TEST(GetInitialReadPosition, NullContextThrows) {
 
 TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
+    auto ctx = std::make_shared<audio::InputStreamContext>(info, 4800);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
@@ -1131,7 +984,7 @@ TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
 
     // Timestamp 2 seconds before stream started
-    int64_t old_timestamp = stream_start_timestamp_ns - 2 * microphone::NANOSECONDS_PER_SECOND;
+    int64_t old_timestamp = stream_start_timestamp_ns - 2 * NANOSECONDS_PER_SECOND;
 
     EXPECT_THROW({
         microphone::get_initial_read_position(ctx, old_timestamp);
@@ -1140,7 +993,7 @@ TEST(GetInitialReadPosition, TimestampBeforeStreamStartThrows) {
 
 TEST(GetInitialReadPosition, TimestampInFutureThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 4800);
+    auto ctx = std::make_shared<audio::InputStreamContext>(info, 4800);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
@@ -1161,7 +1014,7 @@ TEST(GetInitialReadPosition, TimestampInFutureThrows) {
 
 TEST(GetInitialReadPosition, TimestampTooOldThrows) {
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 48000, 2};
-    auto ctx = std::make_shared<microphone::AudioStreamContext>(info, 30);
+    auto ctx = std::make_shared<audio::InputStreamContext>(info, 30);
     ctx->stream_start_time = std::chrono::system_clock::now();
     ctx->first_callback_captured.store(true);
 
@@ -1298,7 +1151,7 @@ TEST_F(MicrophoneTest, CodecConversion_PCM32Float) {
     EXPECT_EQ(chunks_received, num_chunks);
     ASSERT_EQ(received_samples.size(), samples_per_chunk*num_chunks);
     for (int i = 0; i < 10; i++) {
-        float expected = static_cast<float>(static_cast<int16_t>(i)) * microphone::INT16_TO_FLOAT_SCALE;
+        float expected = static_cast<float>(static_cast<int16_t>(i)) * INT16_TO_FLOAT_SCALE;
         EXPECT_FLOAT_EQ(received_samples[i], expected);
     }
 }
@@ -1386,7 +1239,7 @@ TEST_F(MicrophoneTest, HistoricalDataRespectsDuration) {
     // Calculate a previous timestamp pointing to 5 seconds into the stream
     auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(ctx->stream_start_time);
     int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
-    int64_t previous_timestamp_ns = stream_start_timestamp_ns + (5 *  microphone::NANOSECONDS_PER_SECOND); // 5 seconds into stream
+    int64_t previous_timestamp_ns = stream_start_timestamp_ns + (5 *  NANOSECONDS_PER_SECOND); // 5 seconds into stream
 
     // Request exactly 10 seconds of audio starting from second 5 (will get seconds 5-15)
     int chunk_count = 0;
@@ -1418,8 +1271,102 @@ TEST_F(MicrophoneTest, HistoricalDataRespectsDuration) {
     EXPECT_EQ(chunk_count, 100);
 }
 
+class AudioCallbackTest : public ::testing::Test {
+  protected:
+      void SetUp() override {
+          // Create test audio info
+          test_info = viam::sdk::audio_info{
+              .codec = viam::sdk::audio_codecs::PCM_16,
+              .sample_rate_hz = 44100,
+              .num_channels = 1
+          };
+
+          // Create ring buffer context (10 second buffer)
+          ctx = std::make_unique<audio::InputStreamContext>(
+              test_info,
+              10
+          );
+
+          // Create mock time info
+          mock_time_info.inputBufferAdcTime = 0.0;
+          mock_time_info.currentTime = 0.0;
+          mock_time_info.outputBufferDacTime = 0.0;
+      }
+
+      std::vector<int16_t> create_test_samples(int count, int16_t value = 16383) {
+          return std::vector<int16_t>(count, value);
+      }
+
+      int call_callback(const std::vector<int16_t>& samples) {
+          return microphone::AudioCallback(
+              samples.data(),      // inputBuffer
+              nullptr,             // outputBuffer
+              samples.size() / ctx->info.num_channels,  // framesPerBuffer
+              &mock_time_info,     // timeInfo
+              0,                   // statusFlags
+              ctx.get()            // userData
+          );
+      }
+
+      viam::sdk::audio_info test_info;
+      int samples_per_chunk;
+      std::unique_ptr<audio::InputStreamContext> ctx;
+      PaStreamCallbackTimeInfo mock_time_info;
+  };
+
+
+  TEST_F(AudioCallbackTest, WritesSamplesToCircularBuffer) {
+      std::vector<int16_t> samples = {100, 200, 300, 400, 500};
+
+      int result = call_callback(samples);
+
+      EXPECT_EQ(result, paContinue);
+
+      EXPECT_EQ(ctx->get_write_position(), samples.size());
+
+      std::vector<int16_t> read_buffer(samples.size());
+      uint64_t read_pos = 0;
+      int samples_read = ctx->read_samples(read_buffer.data(), samples.size(), read_pos);
+
+      EXPECT_EQ(samples_read, samples.size());
+      EXPECT_EQ(read_buffer, samples);
+  }
+
+  TEST_F(AudioCallbackTest, TracksFirstCallbackTime) {
+      std::vector<int16_t> samples = create_test_samples(100);
+      EXPECT_FALSE(ctx->first_callback_captured.load());
+      call_callback(samples);
+      EXPECT_TRUE(ctx->first_callback_captured.load());
+      EXPECT_EQ(ctx->first_sample_adc_time, mock_time_info.inputBufferAdcTime);
+  }
+
+  TEST_F(AudioCallbackTest, TracksSamplesWritten) {
+      std::vector<int16_t> samples = create_test_samples(100);
+
+      EXPECT_EQ(ctx->total_samples_written.load(), 0);
+      call_callback(samples);
+      EXPECT_EQ(ctx->total_samples_written.load(), 100);
+      call_callback(samples);
+      EXPECT_EQ(ctx->total_samples_written.load(), 200);
+  }
+
+  TEST_F(AudioCallbackTest, HandlesNullInputBuffer) {
+      int result = microphone::AudioCallback(
+          nullptr,           // null input buffer
+          nullptr,
+          100,
+          &mock_time_info,
+          0,
+          ctx.get()
+      );
+
+      // Should return paContinue and not write anything
+      EXPECT_EQ(result, paContinue);
+      EXPECT_EQ(ctx->get_write_position(), 0);
+  }
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  ::testing::AddGlobalTestEnvironment(new MicrophoneTestEnvironment);
+  ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);
   return RUN_ALL_TESTS();
 }

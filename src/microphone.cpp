@@ -2,102 +2,53 @@
 #include <algorithm>
 #include <cctype>
 #include <thread>
+#include "audio_buffer.hpp"
+#include "audio_codec.hpp"
+#include "audio_stream.hpp"
+#include "audio_utils.hpp"
 #include "mp3_encoder.hpp"
 
 namespace microphone {
+using audio::codec::AudioCodec;
 
 // === Static Helper Functions ===
 
-enum class AudioCodec { PCM_16, PCM_32, PCM_32_FLOAT, MP3 };
+// Calculate chunk size aligned to MP3 frame boundaries
+// Returns the number of samples (including all channels) for an optimal chunk size
+// mp3_frame_size should be the actual frame size from LAME (1152 or 576), defaults to 1152
+int calculate_aligned_chunk_size(int sample_rate, int num_channels, int mp3_frame_size = 1152) {
+    // Calculate how many frames fit into approximately 100-200ms
+    // Target: around 150ms for reasonable latency
 
-static std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
-    return s;
-}
+    const double target_duration_seconds = 0.15;  // 150ms target
+    const double samples_per_channel_target = sample_rate * target_duration_seconds;
 
-// Convert string codec to enum
-static AudioCodec parse_codec(const std::string& codec_str) {
-    std::string codec = toLower(codec_str);
-    if (codec == vsdk::audio_codecs::PCM_32) {
-        return AudioCodec::PCM_32;
-    } else if (codec == vsdk::audio_codecs::PCM_32_FLOAT) {
-        return AudioCodec::PCM_32_FLOAT;
-    } else if (codec == vsdk::audio_codecs::MP3) {
-        return AudioCodec::MP3;
-    } else if (codec == vsdk::audio_codecs::PCM_16) {
-        return AudioCodec::PCM_16;
-    } else {
-        std::ostringstream buffer;
-        buffer << "Unsupported codec: " << codec << ". Supported codecs: pcm16, pcm32, pcm32_float, mp3";
-        VIAM_SDK_LOG(error) << buffer.str();
-        throw std::invalid_argument(buffer.str());
-    }
-}
+    // Round to nearest number of MP3 frames
+    int num_frames = static_cast<int>(samples_per_channel_target / mp3_frame_size + 0.5);
 
-static void convert_pcm16_to_pcm32(const int16_t* samples, int sample_count, std::vector<uint8_t>& output) {
-    if (samples == nullptr || sample_count <= 0) {
-        output.clear();
-        return;
+    // Ensure at least 1 frame
+    if (num_frames < 1) {
+        num_frames = 1;
     }
 
-    // Convert int16 to int32 (left shift by 16 to preserve volume)
-    output.resize(sample_count * sizeof(int32_t));
-    int32_t* out = reinterpret_cast<int32_t*>(output.data());
-    for (int i = 0; i < sample_count; i++) {
-        out[i] = static_cast<int32_t>(samples[i]) << 16;
-    }
-}
+    // Calculate total samples including all channels
+    const int samples_per_channel = num_frames * mp3_frame_size;
+    const int total_samples = samples_per_channel * num_channels;
 
-static void convert_pcm16_to_float32(const int16_t* samples, int sample_count, std::vector<uint8_t>& output) {
-    if (samples == nullptr || sample_count <= 0) {
-        output.clear();
-        return;
-    }
+    const double actual_duration = static_cast<double>(samples_per_channel) / sample_rate;
+    VIAM_SDK_LOG(debug) << "Calculated aligned chunk size: " << total_samples << " samples (" << num_frames << " MP3 frames of "
+                        << mp3_frame_size << " samples, " << actual_duration * 1000.0 << "ms, " << sample_rate << "Hz, " << num_channels
+                        << " channels)";
 
-    // Convert int16 to float32 (normalize to range -1.0 to 1.0)
-    output.resize(sample_count * sizeof(float));
-    float* out = reinterpret_cast<float*>(output.data());
-    for (int i = 0; i < sample_count; i++) {
-        out[i] = static_cast<float>(samples[i]) * INT16_TO_FLOAT_SCALE;
-    }
-}
-
-static void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uint8_t>& output) {
-    if (samples == nullptr || sample_count <= 0) {
-        output.clear();
-        return;
-    }
-
-    output.resize(sample_count * sizeof(int16_t));
-    std::memcpy(output.data(), samples, sample_count * sizeof(int16_t));
-}
-
-static void encode_audio_chunk(AudioCodec codec,
-                               int16_t* samples,
-                               int sample_count,
-                               uint64_t chunk_start_position,
-                               MP3EncoderContext& mp3_ctx,
-                               std::vector<uint8_t>& output_data) {
-    switch (codec) {
-        case AudioCodec::PCM_32:
-            convert_pcm16_to_pcm32(samples, sample_count, output_data);
-            break;
-        case AudioCodec::PCM_32_FLOAT:
-            convert_pcm16_to_float32(samples, sample_count, output_data);
-            break;
-        case AudioCodec::MP3:
-            encode_samples_to_mp3(mp3_ctx, samples, sample_count, chunk_start_position, output_data);
-            break;
-        case AudioCodec::PCM_16:
-        default:
-            copy_pcm16(samples, sample_count, output_data);
-            break;
-    }
+    return total_samples;
 }
 
 // Calculate chunk size based on codec and audio format
 // For MP3, aligns chunk size with the mp3 frame size
-static int calculate_chunk_size(const AudioCodec codec, int sample_rate, int num_channels, const MP3EncoderContext* mp3_ctx = nullptr) {
+static int calculate_chunk_size(const audio::codec::AudioCodec codec,
+                                int sample_rate,
+                                int num_channels,
+                                const MP3EncoderContext* mp3_ctx = nullptr) {
     if (codec == AudioCodec::MP3) {
         if (mp3_ctx == nullptr || mp3_ctx->frame_size == 0) {
             throw std::invalid_argument("MP3 encoder must be initialized before calculating chunk size");
@@ -106,7 +57,7 @@ static int calculate_chunk_size(const AudioCodec codec, int sample_rate, int num
         return calculate_aligned_chunk_size(sample_rate, num_channels, mp3_ctx->frame_size);
     } else {
         // PCM codecs: 100ms chunks
-        int num_samples_per_100_ms = static_cast<int>(sample_rate * 0.1);
+        const int num_samples_per_100_ms = static_cast<int>(sample_rate * 0.1);
         return num_samples_per_100_ms * num_channels;
     }
 }
@@ -132,46 +83,39 @@ class StreamGuard {
 
 Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), active_streams_(0) {
-    auto params = parseConfigAttributes(cfg);
-    setupStreamFromConfig(params);
+    auto setup = audio::utils::setup_audio_device<audio::InputStreamContext>(cfg, audio::utils::StreamDirection::Input, AudioCallback, pa_);
+
+    // Set new configuration and start stream under lock
+    {
+        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+        device_name_ = setup.stream_params.device_name;
+        device_index_ = setup.stream_params.device_index;
+        sample_rate_ = setup.stream_params.sample_rate;
+        num_channels_ = setup.stream_params.num_channels;
+        latency_ = setup.stream_params.latency_seconds;
+        audio_context_ = setup.audio_context;
+        historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
+
+        audio::utils::restart_stream(stream_, setup.stream_params, pa_);
+    }
 }
 
-// Microphone destructor
 Microphone::~Microphone() {
+    VIAM_SDK_LOG(debug) << "[Microphone::~Microphone] Destructor called";
     if (stream_) {
-        Pa_StopStream(stream_);
-        Pa_CloseStream(stream_);
+        PaError err = Pa_StopStream(stream_);
+        if (err != paNoError) {
+            VIAM_SDK_LOG(error) << "Failed to stop stream in destructor: " << Pa_GetErrorText(err);
+        }
+
+        err = Pa_CloseStream(stream_);
+        if (err != paNoError) {
+            VIAM_SDK_LOG(error) << "Failed to close stream in destructor: " << Pa_GetErrorText(err);
+        }
     }
 }
 
 vsdk::Model Microphone::model("viam", "audio", "microphone");
-
-ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) {
-    auto attrs = cfg.attributes();
-    ConfigParams params;
-
-    if (attrs.count("device_name")) {
-        params.device_name = *attrs.at("device_name").get<std::string>();
-    }
-
-    if (attrs.count("sample_rate")) {
-        params.sample_rate = static_cast<int>(*attrs.at("sample_rate").get<double>());
-    }
-
-    if (attrs.count("num_channels")) {
-        params.num_channels = static_cast<int>(*attrs.at("num_channels").get<double>());
-    }
-
-    if (attrs.count("latency")) {
-        params.latency_ms = *attrs.at("latency").get<double>();
-    }
-
-    if (attrs.count("historical_throttle_ms")) {
-        params.historical_throttle_ms = static_cast<int>(*attrs.at("historical_throttle_ms").get<double>());
-    }
-
-    return params;
-}
 
 std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
     auto attrs = cfg.attributes();
@@ -188,7 +132,7 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] sample_rate attribute must be a number";
             throw std::invalid_argument("sample_rate attribute must be a number");
         }
-        double sample_rate = *attrs.at("sample_rate").get<double>();
+        const double sample_rate = *attrs.at("sample_rate").get<double>();
         if (sample_rate <= 0) {
             VIAM_SDK_LOG(error) << "[validate] sample rate must be greater than zero";
             throw std::invalid_argument("sample rate must be greater than zero");
@@ -199,18 +143,19 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] num_channels attribute must be a number";
             throw std::invalid_argument("num_channels attribute must be a number");
         }
-        double num_channels = *attrs.at("num_channels").get<double>();
+        const double num_channels = *attrs.at("num_channels").get<double>();
         if (num_channels <= 0) {
             VIAM_SDK_LOG(error) << "[validate] num_channels must be greater than zero";
             throw std::invalid_argument(" num_channels must be greater than zero");
         }
     }
+
     if (attrs.count("latency")) {
         if (!attrs["latency"].is_a<double>()) {
             VIAM_SDK_LOG(error) << "[validate] latency attribute must be a number";
             throw std::invalid_argument("latency attribute must be a number");
         }
-        double latency_ms = *attrs.at("latency").get<double>();
+        const double latency_ms = *attrs.at("latency").get<double>();
         if (latency_ms < 0) {
             VIAM_SDK_LOG(error) << "[validate] latency must be non-negative";
             throw std::invalid_argument("latency must be non-negative");
@@ -222,7 +167,7 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
             VIAM_SDK_LOG(error) << "[validate] historical_throttle_ms attribute must be a number";
             throw std::invalid_argument("historical_throttle_ms attribute must be a number");
         }
-        double historical_throttle_ms = *attrs.at("historical_throttle_ms").get<double>();
+        const double historical_throttle_ms = *attrs.at("historical_throttle_ms").get<double>();
         if (historical_throttle_ms < 0) {
             VIAM_SDK_LOG(error) << "[validate] historical_throttle_ms must be non-negative";
             throw std::invalid_argument("historical_throttle_ms must be non-negative");
@@ -248,8 +193,25 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             }
         }
 
-        auto params = parseConfigAttributes(cfg);
-        setupStreamFromConfig(params);
+        auto setup =
+            audio::utils::setup_audio_device<audio::InputStreamContext>(cfg, audio::utils::StreamDirection::Input, AudioCallback, pa_);
+
+        // Set new configuration and restart stream under lock
+        {
+            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+
+            // Stop the stream first before replacing audio_context_
+            // Otherwise the callback thread may still be accessing the old context
+            // after we destroy it (heap-use-after-free)
+            audio::utils::restart_stream(stream_, setup.stream_params, pa_);
+            device_name_ = setup.stream_params.device_name;
+            device_index_ = setup.stream_params.device_index;
+            sample_rate_ = setup.stream_params.sample_rate;
+            num_channels_ = setup.stream_params.num_channels;
+            latency_ = setup.stream_params.latency_seconds;
+            audio_context_ = setup.audio_context;
+            historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
+        }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
     } catch (const std::exception& e) {
         VIAM_SDK_LOG(error) << "[reconfigure] Reconfigure failed: " << e.what();
@@ -270,7 +232,7 @@ void Microphone::get_audio(std::string const& codec,
     VIAM_SDK_LOG(debug) << "get_audio called";
 
     // Parse codec string to enum
-    AudioCodec codec_enum = parse_codec(codec);
+    const AudioCodec codec_enum = audio::codec::parse_codec(codec);
 
     // guard to increment and decrement the active stream count
     StreamGuard stream_guard(stream_ctx_mu_, active_streams_);
@@ -282,7 +244,7 @@ void Microphone::get_audio(std::string const& codec,
     uint64_t sequence = 0;
 
     // Track which context we're reading from to detect any device config changes
-    std::shared_ptr<AudioStreamContext> stream_context;
+    std::shared_ptr<audio::InputStreamContext> stream_context;
     uint64_t read_position = 0;
 
     {
@@ -359,7 +321,6 @@ void Microphone::get_audio(std::string const& codec,
                         VIAM_SDK_LOG(error) << buffer.str();
                         throw std::runtime_error(buffer.str());
                     }
-                    stream_historical_throttle_ms = historical_throttle_ms_;
                 }
                 // Switch to new context and reset read position
                 stream_context = audio_context_;
@@ -369,8 +330,8 @@ void Microphone::get_audio(std::string const& codec,
         }
 
         // Check if we have enough samples for a full chunk
-        uint64_t write_pos = stream_context->get_write_position();
-        uint64_t available_samples = write_pos - read_position;
+        const uint64_t write_pos = stream_context->get_write_position();
+        const uint64_t available_samples = write_pos - read_position;
 
         // Wait until we have a full chunk worth of samples
         if (available_samples < samples_per_chunk) {
@@ -381,7 +342,7 @@ void Microphone::get_audio(std::string const& codec,
         std::vector<int16_t> temp_buffer(samples_per_chunk);
         uint64_t chunk_start_position = read_position;
         // Read exactly one chunk worth of samples
-        int samples_read = stream_context->read_samples(temp_buffer.data(), samples_per_chunk, read_position);
+        const int samples_read = stream_context->read_samples(temp_buffer.data(), samples_per_chunk, read_position);
 
         if (samples_read < samples_per_chunk) {
             // Shouldn't happen since we checked available_samples, but to be safe
@@ -392,7 +353,7 @@ void Microphone::get_audio(std::string const& codec,
         vsdk::AudioIn::audio_chunk chunk;
 
         // Convert from int16 (captured format) to requested codec
-        encode_audio_chunk(codec_enum, temp_buffer.data(), samples_read, chunk_start_position, mp3_ctx, chunk.audio_data);
+        audio::codec::encode_audio_chunk(codec_enum, temp_buffer.data(), samples_read, chunk_start_position, mp3_ctx, chunk.audio_data);
 
         chunk.info.codec = codec;
         chunk.info.sample_rate_hz = stream_sample_rate;
@@ -403,7 +364,7 @@ void Microphone::get_audio(std::string const& codec,
         uint64_t chunk_end_position = chunk_start_position + samples_read;
         if (codec_enum == AudioCodec::MP3 && mp3_ctx.encoder) {
             // Aadjust for encoder delay since decoded output will be shifted
-            int delay_samples = mp3_ctx.encoder_delay * stream_num_channels;
+            const int delay_samples = mp3_ctx.encoder_delay * stream_num_channels;
             // Timestamps should reflect the data the encoder returned,
             // adjust for encoder delay
             if (chunk_start_position >= delay_samples) {
@@ -429,8 +390,8 @@ void Microphone::get_audio(std::string const& codec,
 
         // Check if we've read enough audio (only if duration limit is set)
         if (duration_limit_set) {
-            int64_t time_elapsed_ns = chunk.end_timestamp_ns.count() - first_chunk_start_timestamp_ns;
-            double time_elapsed_seconds = time_elapsed_ns / 1e9;
+            const int64_t time_elapsed_ns = chunk.end_timestamp_ns.count() - first_chunk_start_timestamp_ns;
+            const double time_elapsed_seconds = time_elapsed_ns / 1e9;
 
             if (time_elapsed_seconds >= duration_seconds) {
                 VIAM_SDK_LOG(debug) << "Reached audio duration limit: read " << time_elapsed_seconds << "s, limit was " << duration_seconds
@@ -448,11 +409,11 @@ void Microphone::get_audio(std::string const& codec,
         }
 
         // Check if we're reading historical data (far behind write position)
-        if (previous_timestamp != 0 && duration_limit_set) {
-            uint64_t current_write_pos = stream_context->get_write_position();
-            uint64_t distance_behind = current_write_pos - read_position;
+        if (previous_timestamp != 0) {
+            const uint64_t current_write_pos = stream_context->get_write_position();
+            const uint64_t distance_behind = current_write_pos - read_position;
             // If we're more than 1 second behind, we're reading historical data
-            uint64_t one_second_samples = stream_sample_rate * stream_num_channels;
+            const uint64_t one_second_samples = stream_sample_rate * stream_num_channels;
             if (distance_behind > one_second_samples) {
                 // Throttle historical data to give clients time to process
                 std::this_thread::sleep_for(std::chrono::milliseconds(stream_historical_throttle_ms));
@@ -467,7 +428,7 @@ void Microphone::get_audio(std::string const& codec,
         flush_mp3_encoder(mp3_ctx, final_data);
 
         if (!final_data.empty()) {
-            size_t final_data_size = final_data.size();
+            const size_t final_data_size = final_data.size();
             vsdk::AudioIn::audio_chunk final_chunk;
             final_chunk.audio_data = std::move(final_data);
             final_chunk.info.codec = codec;
@@ -477,9 +438,9 @@ void Microphone::get_audio(std::string const& codec,
 
             // Since our chunk sizes are aligned with the frame size,
             // there will be delay_samples flushed from the encoder buffer
-            int delay_samples = mp3_ctx.encoder_delay * stream_num_channels;
-            uint64_t timestamp_start = last_chunk_end_position;
-            uint64_t timestamp_end = last_chunk_end_position + delay_samples;
+            const int delay_samples = mp3_ctx.encoder_delay * stream_num_channels;
+            const uint64_t timestamp_start = last_chunk_end_position;
+            const uint64_t timestamp_end = last_chunk_end_position + delay_samples;
 
             VIAM_SDK_LOG(debug) << "Flush: last_chunk_end=" << last_chunk_end_position << " encoder_delay=" << mp3_ctx.encoder_delay
                                 << " samples (" << delay_samples << " total)"
@@ -513,226 +474,7 @@ std::vector<viam::sdk::GeometryConfig> Microphone::get_geometries(const viam::sd
     throw std::runtime_error("get_geometries is unimplemented");
 }
 
-void Microphone::setupStreamFromConfig(const ConfigParams& params) {
-    audio::portaudio::RealPortAudio real_pa;
-    const audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
-
-    // Determine device and get device info
-    std::string new_device_name = params.device_name;
-    PaDeviceIndex device_index = paNoDevice;
-    const PaDeviceInfo* deviceInfo = nullptr;
-
-    if (new_device_name.empty()) {
-        device_index = audio_interface.getDefaultInputDevice();
-        if (device_index == paNoDevice) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] No default input device found";
-            throw std::runtime_error("no default input device found");
-        }
-        deviceInfo = audio_interface.getDeviceInfo(device_index);
-        if (!deviceInfo) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for default device";
-            throw std::runtime_error("failed to get device info for default device");
-        }
-        if (!deviceInfo->name) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get the name of the default device";
-            throw std::runtime_error("failed to get the name of the default device");
-        }
-        new_device_name = deviceInfo->name;
-
-    } else {
-        device_index = findDeviceByName(new_device_name, audio_interface);
-        if (device_index == paNoDevice) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio input device with name '" << new_device_name << "' not found";
-            throw std::runtime_error("audio input device with name " + new_device_name + " not found");
-        }
-        deviceInfo = audio_interface.getDeviceInfo(device_index);
-        if (!deviceInfo) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device: " << new_device_name;
-            throw std::runtime_error("failed to get device info for device: " + new_device_name);
-        }
-    }
-
-    // Resolve final values (use params if specified, otherwise device defaults)
-    int new_sample_rate = params.sample_rate.value_or(static_cast<int>(deviceInfo->defaultSampleRate));
-    int new_num_channels = params.num_channels.value_or(1);
-    double new_latency = params.latency_ms.has_value() ? params.latency_ms.value() / 1000.0  // Convert ms to seconds
-                                                       : deviceInfo->defaultLowInputLatency;
-    double new_historical_throttle_ms = params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
-
-    // Validate num_channels against device's max input channels
-    if (new_num_channels > deviceInfo->maxInputChannels) {
-        VIAM_SDK_LOG(error) << "Requested " << new_num_channels << " channels but device '" << deviceInfo->name << "' only supports "
-                            << deviceInfo->maxInputChannels << " input channels";
-        throw std::invalid_argument("num_channels exceeds device's maximum input channels");
-    }
-
-    // Check if config unchanged (only for reconfigure, not initial setup)
-    if (stream_) {
-        ActiveStreamConfig current_config{device_name_, sample_rate_, num_channels_, latency_};
-        ActiveStreamConfig new_config{new_device_name, new_sample_rate, new_num_channels, new_latency};
-
-        if (current_config == new_config) {
-            VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Config unchanged, skipping stream restart";
-            return;
-        }
-    }
-
-    // This is initial setup, not reconfigure, start stream
-    if (!stream_) {
-        // Create audio context for initial setup
-        vsdk::audio_info info{vsdk::audio_codecs::PCM_16, new_sample_rate, new_num_channels};
-        auto new_audio_context = std::make_shared<AudioStreamContext>(info);
-
-        // Set configuration under lock before opening stream
-        {
-            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-            device_name_ = new_device_name;
-            device_index_ = device_index;
-            sample_rate_ = new_sample_rate;
-            num_channels_ = new_num_channels;
-            latency_ = new_latency;
-            historical_throttle_ms_ = new_historical_throttle_ms;
-            audio_context_ = new_audio_context;
-        }
-
-        PaStream* new_stream = nullptr;
-        // These will throw in case of error
-        openStream(&new_stream);
-        startStream(new_stream);
-
-        {
-            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-            stream_ = new_stream;
-        }
-
-        return;
-    }
-
-    // Config has changed, restart stream
-    vsdk::audio_info info{vsdk::audio_codecs::PCM_16, new_sample_rate, new_num_channels};
-    auto new_audio_context = std::make_shared<AudioStreamContext>(info);
-
-    PaStream* old_stream = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        old_stream = stream_;
-    }
-    if (old_stream)
-        shutdownStream(old_stream);
-
-    // Set new configuration under lock (needed before openStream since it uses these)
-    {
-        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        device_name_ = new_device_name;
-        device_index_ = device_index;
-        sample_rate_ = new_sample_rate;
-        num_channels_ = new_num_channels;
-        latency_ = new_latency;
-        historical_throttle_ms_ = new_historical_throttle_ms;
-        audio_context_ = new_audio_context;
-    }
-
-    // Open and start new stream
-    PaStream* new_stream = nullptr;
-    openStream(&new_stream);
-    startStream(new_stream);
-
-    // Swap in new stream under lock
-    {
-        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        stream_ = new_stream;
-    }
-
-    VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Stream configured successfully";
-}
-void startPortAudio(const audio::portaudio::PortAudioInterface* pa) {
-    audio::portaudio::RealPortAudio real_pa;
-    const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
-    PaError err = audio_interface.initialize();
-    if (err != 0) {
-        std::ostringstream buffer;
-        buffer << "failed to initialize PortAudio library: " << Pa_GetErrorText(err);
-        VIAM_SDK_LOG(error) << "[startPortAudio] " << buffer.str();
-        throw std::runtime_error(buffer.str());
-    }
-    int numDevices = Pa_GetDeviceCount();
-    VIAM_SDK_LOG(info) << "Available input devices:";
-    for (int i = 0; i < numDevices; i++) {
-        const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
-        if (!info) {
-            VIAM_SDK_LOG(error) << "failed to get device info for " << i + 1 << "th device";
-            continue;
-        }
-        if (info->maxInputChannels > 0) {
-            VIAM_SDK_LOG(info) << info->name << " default sample rate: " << info->defaultSampleRate
-                               << " max input channels: " << info->maxInputChannels;
-        }
-    }
-}
-
-void Microphone::openStream(PaStream** stream) {
-    audio::portaudio::RealPortAudio real_pa;
-    const audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
-
-    // Setup stream parameters
-    PaStreamParameters params;
-    params.device = device_index_;
-    params.channelCount = num_channels_;
-    params.sampleFormat = paInt16;
-    params.suggestedLatency = latency_;
-    params.hostApiSpecificStreamInfo = nullptr;  // Must be NULL if not used
-
-    PaError err = audio_interface.isFormatSupported(&params, nullptr, sample_rate_);
-    if (err != paNoError) {
-        std::ostringstream buffer;
-        buffer << "Audio format not supported by device '" << device_name_ << "' (index " << device_index_ << "): " << Pa_GetErrorText(err)
-               << "\n"
-               << "Requested configuration:\n"
-               << "  - Sample rate: " << sample_rate_ << " Hz\n"
-               << "  - Channels: " << num_channels_ << "\n"
-               << "  - Format: 16-bit PCM\n"
-               << "  - Latency: " << latency_ << " seconds";
-        VIAM_SDK_LOG(error) << buffer.str();
-        throw std::runtime_error(buffer.str());
-    }
-
-    VIAM_SDK_LOG(info) << "Opening stream for device '" << device_name_ << "' (index " << device_index_ << ")"
-                       << " with sample rate " << sample_rate_ << ", channels: " << num_channels_ << " and latency "
-                       << params.suggestedLatency << " seconds";
-
-    err = audio_interface.openStream(stream,
-                                     &params,  // input params
-                                     NULL,     // output params
-                                     sample_rate_,
-                                     paFramesPerBufferUnspecified,  // let portaudio pick the frames per buffer
-                                     paNoFlag,                      // stream flags - enable default clipping behavior
-                                     AudioCallback,
-                                     audio_context_.get()  // user data to pass through to callback
-    );
-
-    if (err != paNoError) {
-        std::ostringstream buffer;
-        buffer << "Failed to open audio stream for device '" << device_name_ << "': "
-               << "' (index " << device_index_ << "): " << Pa_GetErrorText(err) << " (sample_rate=" << sample_rate_
-               << ", channels=" << num_channels_ << ", latency=" << params.suggestedLatency << "s)";
-        VIAM_SDK_LOG(error) << buffer.str();
-        throw std::runtime_error(buffer.str());
-    }
-}
-
-void Microphone::startStream(PaStream* stream) {
-    audio::portaudio::RealPortAudio real_pa;
-    const audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
-
-    PaError err = audio_interface.startStream(stream);
-    if (err != paNoError) {
-        audio_interface.closeStream(stream);
-        VIAM_SDK_LOG(error) << "Failed to start audio stream: " << Pa_GetErrorText(err);
-        throw std::runtime_error(std::string("Failed to start audio stream: ") + Pa_GetErrorText(err));
-    }
-}
-
-uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& stream_context, int64_t previous_timestamp) {
+uint64_t get_initial_read_position(const std::shared_ptr<audio::InputStreamContext>& stream_context, int64_t previous_timestamp) {
     if (!stream_context) {
         throw std::invalid_argument("stream_context is null");
     }
@@ -748,12 +490,11 @@ uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& st
         buffer << "Invalid previous_timestamp: " << previous_timestamp << " (must be non-negative)";
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::invalid_argument(buffer.str());
-        ;
     }
 
     // Validate timestamp is not before stream started
-    auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_context->stream_start_time);
-    int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
+    const auto stream_start_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(stream_context->stream_start_time);
+    const int64_t stream_start_timestamp_ns = stream_start_ns.time_since_epoch().count();
     if (previous_timestamp < stream_start_timestamp_ns) {
         std::ostringstream buffer;
         buffer << "Requested timestamp is before stream started: stream started at " << stream_start_timestamp_ns
@@ -764,14 +505,14 @@ uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& st
 
     // Convert timestamp to sample position, then advance by 1
     // We read from the NEXT sample after the requested timestamp
-    uint64_t sample_number = stream_context->get_sample_number_from_timestamp(previous_timestamp);
-    uint64_t read_position = sample_number + 1;
+    const uint64_t sample_number = stream_context->get_sample_number_from_timestamp(previous_timestamp);
+    const uint64_t read_position = sample_number + 1;
 
     // Validate timestamp is not in the future
-    uint64_t current_write_pos = stream_context->get_write_position();
+    const uint64_t current_write_pos = stream_context->get_write_position();
     if (read_position > current_write_pos) {
         // Calculate what the current time would be based on samples written
-        auto latest_timestamp = stream_context->calculate_sample_timestamp(current_write_pos);
+        const auto latest_timestamp = stream_context->calculate_sample_timestamp(current_write_pos);
         std::ostringstream buffer;
         buffer << "requested timestamp " << previous_timestamp << " is in the future (latest available: " << latest_timestamp.count()
                << "): audio not yet captured";
@@ -783,7 +524,7 @@ uint64_t get_initial_read_position(const std::shared_ptr<AudioStreamContext>& st
     if (current_write_pos > read_position + stream_context->buffer_capacity) {
         std::ostringstream buffer;
         buffer << "requested timestamp is too old - audio has been overwritten. "
-               << "Buffer only holds " << BUFFER_DURATION_SECONDS << " seconds of audio history.";
+               << "Buffer only holds " << audio::BUFFER_DURATION_SECONDS << " seconds of audio history.";
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::invalid_argument(buffer.str());
     }
@@ -814,25 +555,56 @@ PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::
     return paNoDevice;
 }
 
-void Microphone::shutdownStream(PaStream* stream) {
-    audio::portaudio::RealPortAudio real_pa;
-    const audio::portaudio::PortAudioInterface& audio_interface = pa_ ? *pa_ : real_pa;
+/**
+ * PortAudio callback function - runs on real-time audio thread.
+ *  This function must not:
+ * - Allocate memory (malloc/new)
+ * - Access the file system
+ * - Call any functions that may block
+ * - Take unpredictable amounts of time to complete
+ *
+ */
+// outputBuffer used for playback of audio - unused for microphone
+int AudioCallback(const void* inputBuffer,
+                  void* outputBuffer,
+                  unsigned long framesPerBuffer,
+                  const PaStreamCallbackTimeInfo* timeInfo,
+                  PaStreamCallbackFlags statusFlags,
+                  void* userData) {
+    if (!userData) {
+        // something wrong, stop stream
+        return paAbort;
+    }
+    audio::InputStreamContext* ctx = static_cast<audio::InputStreamContext*>(userData);
 
-    PaError err = audio_interface.stopStream(stream);
-    if (err < 0) {
-        std::ostringstream buffer;
-        buffer << "failed to stop the stream: " << Pa_GetErrorText(err);
-        VIAM_SDK_LOG(error) << "[shutdownStream] " << buffer.str();
-        throw std::runtime_error(buffer.str());
+    if (!ctx) {
+        // something wrong, stop stream
+        return paAbort;
     }
 
-    err = audio_interface.closeStream(stream);
-    if (err < 0) {
-        std::ostringstream buffer;
-        buffer << "failed to close the stream: " << Pa_GetErrorText(err);
-        VIAM_SDK_LOG(error) << "[shutdownStream] " << buffer.str();
-        throw std::runtime_error(buffer.str());
+    if (inputBuffer == nullptr) {
+        return paContinue;
     }
+
+    const int16_t* input = static_cast<const int16_t*>(inputBuffer);
+
+    // First callback: establish anchor between PortAudio time and wall-clock time
+    if (!ctx->first_callback_captured.load()) {
+        // the inputBufferADCTime describes the time when the
+        // first sample of the input buffer was captured,
+        // synced with the clock of the device
+        ctx->first_sample_adc_time = timeInfo->inputBufferAdcTime;
+        ctx->stream_start_time = std::chrono::system_clock::now();
+        ctx->first_callback_captured.store(true);
+    }
+
+    const uint64_t total_samples = framesPerBuffer * ctx->info.num_channels;
+
+    for (int i = 0; i < total_samples; ++i) {
+        ctx->write_sample(input[i]);
+    }
+
+    return paContinue;
 }
 
 }  // namespace microphone

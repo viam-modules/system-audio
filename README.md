@@ -2,7 +2,6 @@
 
 This [Viam module](https://docs.viam.com/registry/) provides audio input and output capabilities using the [PortAudio](http://www.portaudio.com/) library. It can capture and play audio from microphones and speakers on your machine.
 
-
 ## Supported Platforms
 - **Darwin ARM64**
 - **Linux x64**
@@ -61,6 +60,48 @@ The microphone component supports reconfiguration - you can change stream attrib
 - Monitor the `audio_info` field in each audio chunk
 - Detect when `sample_rate` or `num_channels` changes
 - Handle the transition appropriately
+
+
+## Model viam:audio:speaker
+### Configuration
+The following attribute template can be used to configure this model:
+
+```json
+{
+  "device_name" : <DEVICE_NAME>,
+  "sample_rate": <SAMPLE_RATE>,
+  "num_channels": <NUM_CHANNELS>,
+  "latency": <LATENCY>
+}
+```
+
+#### Configuration Attributes
+
+The following attributes are available for the `viam:audio:speaker` model:
+
+| Name          | Type   | Inclusion | Description                |
+|---------------|--------|-----------|----------------------------|
+| `device_name` | string | **Optional** | The PortAudio device name to play audio from. If not specified, the system default will be used. |
+| `sample_rate` | int | **Optional** | The sample rate in Hz of the output stream. If not specified, the device's default sample rate will be used. |
+| `num_channels` | int | **Optional** | The number of audio channels of the output stream. Must not exceed the device's maximum output channels. Default: 1 |
+| `latency` | int | **Optional** | Suggested output latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide faster audio output but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
+
+## Audio Format
+
+All audio data uses **little-endian** byte order. The specific format depends on the codec requested:
+
+**Supported codecs:**
+- `PCM_16`: 16-bit signed integer PCM (range: -32768 to 32767)
+- `PCM_32`: 32-bit signed integer PCM (range: -2147483648 to 2147483647)
+- `PCM_32_FLOAT`: 32-bit floating point PCM (range: -1.0 to 1.0)
+- `MP3`: MP3 compressed audio
+
+**All audio data is in interleaved format** - multi-channel samples are stored sequentially:
+- **Mono (1 channel)**: `[S0, S1, S2, ...]`
+- **Stereo (2 channels)**: `[L0, R0, L1, R1, L2, R2, ...]` (left and right samples alternate)
+
+- **Microphone (`get_audio`)**: Returns audio data in interleaved format
+- **Speaker (`play`)**: Expects audio data in interleaved format
 
 ## Setup
 ```bash

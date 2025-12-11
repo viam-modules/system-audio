@@ -3,20 +3,9 @@
 #include <viam/sdk/common/instance.hpp>
 #include "mp3_encoder.hpp"
 #include "audio_stream.hpp"
+#include "test_utils.hpp"
 
 using namespace microphone;
-
-class MP3EncoderTestEnvironment : public ::testing::Environment {
-public:
-    void SetUp() override {
-        instance_ = std::make_unique<viam::sdk::Instance>();
-    }
-    void TearDown() override {
-        instance_.reset();
-    }
-private:
-    std::unique_ptr<viam::sdk::Instance> instance_;
-};
 class MP3EncoderTest : public ::testing::Test {
 protected:
     MP3EncoderContext ctx_;
@@ -169,6 +158,6 @@ TEST_F(MP3EncoderTest, FlushUninitializedEncoder) {
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  ::testing::AddGlobalTestEnvironment(new MP3EncoderTestEnvironment);
+  ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);
   return RUN_ALL_TESTS();
 }
