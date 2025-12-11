@@ -15,6 +15,7 @@ add_executable(audio-module
     src/audio_buffer.cpp
     src/audio_codec.cpp
     src/speaker.cpp
+    src/discovery.cpp
     src/mp3_encoder.cpp
 )
 

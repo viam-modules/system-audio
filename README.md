@@ -86,6 +86,12 @@ The following attributes are available for the `viam:audio:speaker` model:
 | `num_channels` | int | **Optional** | The number of audio channels of the output stream. Must not exceed the device's maximum output channels. Default: 1 |
 | `latency` | int | **Optional** | Suggested output latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide faster audio output but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
 
+## Model viam:audio:discovery
+
+This model is used to discover audio devices on your machine.
+No configuration is needed, expand the test card or look at the discovery control card to obtain configurations for all connected audio devices.
+
+
 ## Audio Format
 
 All audio data uses **little-endian** byte order. The specific format depends on the codec requested:
@@ -102,6 +108,7 @@ All audio data uses **little-endian** byte order. The specific format depends on
 
 - **Microphone (`get_audio`)**: Returns audio data in interleaved format
 - **Speaker (`play`)**: Expects audio data in interleaved format
+
 
 ## Setup
 ```bash

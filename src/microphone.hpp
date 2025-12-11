@@ -19,23 +19,6 @@ namespace microphone {
 namespace vsdk = ::viam::sdk;
 
 constexpr double DEFAULT_HISTORICAL_THROTTLE_MS = 50;
-
-struct ActiveStreamConfig {
-    std::string device_name;
-    int sample_rate;
-    int num_channels;
-    double latency;
-
-    bool operator==(const ActiveStreamConfig& other) const {
-        return std::tie(device_name, sample_rate, num_channels, latency) ==
-               std::tie(other.device_name, other.sample_rate, other.num_channels, other.latency);
-    }
-
-    bool operator!=(const ActiveStreamConfig& other) const {
-        return !(*this == other);
-    }
-};
-
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
 
 // Calculates the initial read position from a previous timestamp
