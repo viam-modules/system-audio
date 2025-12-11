@@ -156,17 +156,17 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
                    const viam::sdk::ProtoStruct& extra) {
     std::lock_guard<std::mutex> playback_lock(playback_mu_);
 
-    VIAM_SDK_LOG(info) << "Play called, adding samples to playback buffer";
+    VIAM_SDK_LOG(debugs) << "Play called, adding samples to playback buffer";
 
     if (!info) {
         VIAM_SDK_LOG(error) << "[Play]: Must specify audio info parameter";
         throw std::invalid_argument("[Play]: Must specify audio info parameter");
     }
 
-    std::string codec_str = info->codec;
+   const std::string codec_str = info->codec;
 
     // Parse codec string to enum
-    AudioCodec codec = audio::codec::parse_codec(codec_str);
+    const AudioCodec codec = audio::codec::parse_codec(codec_str);
 
     // Validate sample rate and channels match speaker configuration
     {
@@ -196,7 +196,6 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             MP3DecoderContext mp3_ctx;
             decode_mp3_to_pcm16(mp3_ctx, audio_data, decoded_data);
             // For MP3, use the decoded properties from the file, not what user provided
-            VIAM_SDK_LOG(info) << "setting audio sample rate";
             audio_sample_rate = mp3_ctx.sample_rate;
             audio_num_channels = mp3_ctx.num_channels;
             break;
@@ -290,7 +289,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    VIAM_SDK_LOG(info) << "Audio playback complete";
+    VIAM_SDK_LOG(debug) << "Audio playback complete";
 }
 
 viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& extra) {

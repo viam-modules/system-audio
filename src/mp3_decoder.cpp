@@ -94,7 +94,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
     // Decode frame by frame using hip_decode1_headers (returns at most one frame per call)
     // Keep calling with the same data - the decoder maintains internal state
     while (true) {
-        int decoded_samples =
+        const int decoded_samples =
             hip_decode1_headers(ctx.decoder.get(), encoded_data_ptr, mp3_data_length, pcm_left.data(), pcm_right.data(), &mp3data);
 
         if (decoded_samples < 0) {
@@ -128,7 +128,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
     // Flush decoder - repeatedly call with nullptr until no more samples
     int flush_count = 0;
     while (true) {
-        int decoded_samples = hip_decode1_headers(ctx.decoder.get(), nullptr, 0, pcm_left.data(), pcm_right.data(), &mp3data);
+        const int decoded_samples = hip_decode1_headers(ctx.decoder.get(), nullptr, 0, pcm_left.data(), pcm_right.data(), &mp3data);
 
         if (decoded_samples < 0) {
             VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: MP3 decoder failed to flush";
