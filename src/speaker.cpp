@@ -163,7 +163,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         throw std::invalid_argument("[Play]: Must specify audio info parameter");
     }
 
-   const std::string codec_str = info->codec;
+    const std::string codec_str = info->codec;
 
     // Parse codec string to enum
     const AudioCodec codec = audio::codec::parse_codec(codec_str);
