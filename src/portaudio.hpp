@@ -92,7 +92,7 @@ class RealPortAudio : public PortAudioInterface {
     }
 };
 
-inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr) {
+static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr) {
     // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
