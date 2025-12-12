@@ -4,6 +4,8 @@
 #include <cmath>
 #include "speaker.hpp"
 #include "test_utils.hpp"
+#include "audio_codec.hpp"
+#include "mp3_encoder.hpp"
 
 using namespace viam::sdk;
 using namespace audio;
@@ -117,9 +119,7 @@ TEST_F(SpeakerTest, GetPropertiesReturnsCorrectValues) {
 
     EXPECT_EQ(props.sample_rate_hz, sample_rate);
     EXPECT_EQ(props.num_channels, num_channels);
-    ASSERT_EQ(props.supported_codecs.size(), 1);
-    EXPECT_EQ(props.supported_codecs[0], viam::sdk::audio_codecs::PCM_16);
-
+    ASSERT_EQ(props.supported_codecs.size(), 4);
 }
 
 TEST_F(SpeakerTest, PlayWithValidPCM16Data) {
@@ -254,10 +254,11 @@ TEST_F(SpeakerTest, PlayEmptyData) {
     std::vector<uint8_t> audio_data;
 
     ProtoStruct extra{};
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
 
     // Playing empty data should work (just does nothing)
     EXPECT_NO_THROW({
-        speaker.play(audio_data, boost::none, extra);
+        speaker.play(audio_data, info, extra);
     });
 }
 
@@ -390,6 +391,304 @@ TEST_F(SpeakerTest, CallbackFillsWithSilenceWhenInsufficientData) {
     for (int i = num_test_samples; i < total_samples; i++) {
         EXPECT_EQ(output_buffer[i], 0);
     }
+}
+
+// Codec conversion tests - verify play() correctly decodes different formats
+
+TEST_F(SpeakerTest, CodecConversion_PCM16) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create test PCM16 samples
+    int num_samples = 100;
+    std::vector<int16_t> test_samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        test_samples[i] = static_cast<int16_t>(i * 100);
+    }
+
+    // Convert to byte array
+    std::vector<uint8_t> audio_data(num_samples * sizeof(int16_t));
+    std::memcpy(audio_data.data(), test_samples.data(), audio_data.size());
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Set playback position to end so play() returns immediately
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW({
+        speaker.play(audio_data, info, extra);
+    });
+
+    // Verify samples were written correctly to the buffer
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_EQ(read_buffer[i], test_samples[i]);
+    }
+}
+
+TEST_F(SpeakerTest, CodecConversion_PCM32) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create test PCM16 samples
+    int num_samples = 100;
+    std::vector<int16_t> test_samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        test_samples[i] = static_cast<int16_t>(i * 100);
+    }
+
+    // Convert to PCM32 format
+    std::vector<uint8_t> pcm32_data;
+    audio::codec::convert_pcm16_to_pcm32(test_samples.data(), num_samples, pcm32_data);
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Set playback position to end so play() returns immediately
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW({
+        speaker.play(pcm32_data, info, extra);
+    });
+
+    // Verify samples were decoded correctly and written to the buffer
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_EQ(read_buffer[i], test_samples[i]);
+    }
+}
+
+TEST_F(SpeakerTest, CodecConversion_PCM32Float) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create test PCM16 samples
+    int num_samples = 100;
+    std::vector<int16_t> test_samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        test_samples[i] = static_cast<int16_t>(i * 100);
+    }
+
+    // Convert to PCM32_FLOAT format
+    std::vector<uint8_t> float32_data;
+    audio::codec::convert_pcm16_to_float32(test_samples.data(), num_samples, float32_data);
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32_FLOAT, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Set playback position to end so play() returns immediately
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW({
+        speaker.play(float32_data, info, extra);
+    });
+
+    // Verify samples were decoded correctly and written to the buffer
+    // Allow small rounding errors due to float conversion
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_NEAR(read_buffer[i], test_samples[i], 1);
+    }
+}
+
+
+TEST_F(SpeakerTest, CodecConversion_PCM32_InvalidSize) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create PCM32 data with invalid size (not divisible by 4)
+    std::vector<uint8_t> invalid_data = {1, 2, 3, 4, 5};
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    EXPECT_THROW({
+        speaker.play(invalid_data, info, extra);
+    }, std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, CodecConversion_PCM32Float_InvalidSize) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create float32 data with invalid size (not divisible by 4)
+    std::vector<uint8_t> invalid_data = {1, 2, 3, 4, 5, 6, 7};
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32_FLOAT, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    EXPECT_THROW({
+        speaker.play(invalid_data, info, extra);
+    }, std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, CodecConversion_SampleRateMismatch) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    std::vector<uint8_t> audio_data(100);
+
+    // Try to play PCM16 audio with different sample rate
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, 44100, num_channels};
+    ProtoStruct extra{};
+
+    EXPECT_THROW({
+        speaker.play(audio_data, info, extra);
+    }, std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, CodecConversion_ChannelMismatch) {
+    int sample_rate = 48000;
+    int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        Model("viam", "audio", "speaker"),
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    std::vector<uint8_t> audio_data(100);
+
+    // Try to play PCM16 audio with different channel count
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, 2};
+    ProtoStruct extra{};
+
+    EXPECT_THROW({
+        speaker.play(audio_data, info, extra);
+    }, std::invalid_argument);
 }
 
 int main(int argc, char **argv) {

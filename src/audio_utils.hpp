@@ -4,10 +4,27 @@
 #include <sstream>
 #include <string>
 #include <viam/sdk/components/audio_out.hpp>
+#include "audio_stream.hpp"
 #include "portaudio.hpp"
 
 namespace audio {
 namespace utils {
+
+// Generic cleanup wrapper for functions with custom deleters
+template <auto cleanup_fp>
+struct Cleanup {
+    using pointer_type = std::tuple_element_t<0, boost::callable_traits::args_t<decltype(cleanup_fp)>>;
+    using value_type = std::remove_pointer_t<pointer_type>;
+
+    void operator()(pointer_type p) {
+        if (p != nullptr) {
+            cleanup_fp(p);
+        }
+    }
+};
+
+template <auto cleanup_fp>
+using CleanupPtr = std::unique_ptr<typename Cleanup<cleanup_fp>::value_type, Cleanup<cleanup_fp>>;
 
 enum class StreamDirection { Input, Output };
 
@@ -289,7 +306,7 @@ inline AudioDeviceSetup<ContextType> setup_audio_device(const viam::sdk::Resourc
                                                         StreamDirection direction,
                                                         PaStreamCallback* callback,
                                                         const audio::portaudio::PortAudioInterface* pa,
-                                                        int buffer_duration_seconds = 30) {
+                                                        int buffer_duration_seconds = audio::BUFFER_DURATION_SECONDS) {
     AudioDeviceSetup<ContextType> setup;
 
     setup.config_params = parseConfigAttributes(cfg);
