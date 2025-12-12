@@ -6,9 +6,9 @@
 #include <viam/sdk/components/audio_out.hpp>
 #include <viam/sdk/registry/registry.hpp>
 #include "audio_buffer.hpp"
+#include "audio_codec.hpp"
 #include "audio_utils.hpp"
 #include "mp3_decoder.hpp"
-#include "audio_codec.hpp"
 #include "resample.hpp"
 
 namespace speaker {
@@ -160,10 +160,10 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         if (info->num_channels != num_channels_) {
             VIAM_SDK_LOG(error) << "Channel count mismatch: speaker is configured for " << num_channels_ << " channels but audio has "
                                 << info->num_channels << " channels";
-            throw std::invalid_argument("Channel count mismatch: speaker has " + std::to_string(num_channels_) + " channels but audio has " +
-                                        std::to_string(info->num_channels) + " channels");
+            throw std::invalid_argument("Channel count mismatch: speaker has " + std::to_string(num_channels_) +
+                                        " channels but audio has " + std::to_string(info->num_channels) + " channels");
         }
-}
+    }
 
     std::vector<uint8_t> decoded_data;
 
@@ -222,8 +222,8 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         std::lock_guard<std::mutex> lock(stream_mu_);
         // Use speaker sample rate since data has been resampled to match speaker
         double duration_seconds = static_cast<double>(num_samples) / (speaker_sample_rate * speaker_num_channels);
-        VIAM_SDK_LOG(debug) << "Audio duration: " << duration_seconds << " seconds (buffer capacity: "
-                            << audio::BUFFER_DURATION_SECONDS << " seconds)";
+        VIAM_SDK_LOG(debug) << "Audio duration: " << duration_seconds << " seconds (buffer capacity: " << audio::BUFFER_DURATION_SECONDS
+                            << " seconds)";
         if (duration_seconds > audio::BUFFER_DURATION_SECONDS) {
             VIAM_SDK_LOG(error) << "Audio duration (" << duration_seconds << " seconds) exceeds maximum playback buffer size ("
                                 << audio::BUFFER_DURATION_SECONDS << " seconds)";

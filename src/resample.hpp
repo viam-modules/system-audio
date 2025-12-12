@@ -8,10 +8,8 @@ void resample_audio(int input_sample_rate,
                     int num_channels,
                     const std::vector<uint8_t>& input_data,
                     std::vector<uint8_t>& output_data) {
-    VIAM_SDK_LOG(debug) << "resample_audio called: input_rate=" << input_sample_rate
-                        << " output_rate=" << output_sample_rate
-                        << " channels=" << num_channels
-                        << " input_bytes=" << input_data.size();
+    VIAM_SDK_LOG(debug) << "resample_audio called: input_rate=" << input_sample_rate << " output_rate=" << output_sample_rate
+                        << " channels=" << num_channels << " input_bytes=" << input_data.size();
 
     size_t input_samples = input_data.size() / sizeof(int16_t);
     // This formula to calculate output data length obtained from example here:
@@ -47,8 +45,7 @@ void resample_audio(int input_sample_rate,
         throw std::runtime_error(buffer.str());
     }
 
-    VIAM_SDK_LOG(debug) << "Resampling successful: input_samples=" << input_samples
-                        << " output_samples_done=" << output_done
+    VIAM_SDK_LOG(debug) << "Resampling successful: input_samples=" << input_samples << " output_samples_done=" << output_done
                         << " (expected ~" << output_samples << ")";
 
     // Resize output buffer to match actual samples written
