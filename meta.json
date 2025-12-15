@@ -12,7 +12,7 @@
       "short_description": "captures audio from system microphones"
     },
     {
-      "api": "rdk:component:audioout",
+      "api": "rdk:component:audio_out",
       "markdown_link": "README.md#model-viamaudiospeaker",
       "model": "viam:audio:speaker",
       "short_description": "outputs audio to a system speaker"
