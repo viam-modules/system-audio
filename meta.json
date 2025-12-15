@@ -1,9 +1,9 @@
 {
   "$schema": "https://dl.viam.dev/module.schema.json",
-  "module_id": "viam:audio",
+  "module_id": "viam:system-audio",
   "visibility": "public",
-  "url": "https://github.com/viam-modules/audio",
-  "description": "audio module for microphones and speakers",
+  "url": "https://github.com/viam-modules/system-audio",
+  "description": "audio module for system microphones and speakers",
   "models": [
     {
       "api": "rdk:component:audio_in",
