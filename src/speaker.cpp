@@ -45,7 +45,7 @@ Speaker::~Speaker() {
     }
 }
 
-vsdk::Model Speaker::model = {"viam", "audio", "speaker"};
+vsdk::Model Speaker::model = {"viam", "system-audio", "speaker"};
 
 /**
  * PortAudio callback function - runs on real-time audio thread.

@@ -21,7 +21,7 @@ jobs:
             os: macos-latest
             artifact-name: module-darwin-arm64
           - platform: linux/arm64
-            os: buildjet-8vcpu-ubuntu-2204-arm
+            os: ubuntu-4cpu-arm
             container:
               image: ghcr.io/viam-modules/audio/viam-audio:0.0.2
             artifact-name: module-linux-arm64

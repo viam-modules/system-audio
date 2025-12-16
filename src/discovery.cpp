@@ -11,7 +11,7 @@
 namespace discovery {
 
 namespace vsdk = ::viam::sdk;
-vsdk::Model AudioDiscovery::model = vsdk::Model("viam", "audio", "discovery");
+vsdk::Model AudioDiscovery::model = vsdk::Model("viam", "system-audio", "discovery");
 
 AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies,
                                vsdk::ResourceConfig configuration,

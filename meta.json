@@ -1,26 +1,26 @@
 {
   "$schema": "https://dl.viam.dev/module.schema.json",
-  "module_id": "viam:audio",
+  "module_id": "viam:system-audio",
   "visibility": "public",
-  "url": "https://github.com/viam-modules/audio",
-  "description": "audio module for microphones and speakers",
+  "url": "https://github.com/viam-modules/system-audio",
+  "description": "audio module for system microphones and speakers",
   "models": [
     {
       "api": "rdk:component:audio_in",
       "markdown_link": "README.md#model-viamaudiomicrophone",
-      "model": "viam:audio:microphone",
+      "model": "viam:system-audio:microphone",
       "short_description": "captures audio from system microphones"
     },
     {
-      "api": "rdk:component:audioout",
+      "api": "rdk:component:audio_out",
       "markdown_link": "README.md#model-viamaudiospeaker",
-      "model": "viam:audio:speaker",
+      "model": "viam:system-audio:speaker",
       "short_description": "outputs audio to a system speaker"
     },
     {
       "api": "rdk:service:discovery",
       "markdown_link": "README.md#model-viamaudiodiscovery",
-      "model": "viam:audio:discovery",
+      "model": "viam:system-audio:discovery",
       "short_description": "discovers microphones and speakers on the system"
     }
   ],

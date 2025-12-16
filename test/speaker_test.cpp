@@ -21,7 +21,7 @@ protected:
         auto attributes = ProtoStruct{};
         test_config_ = std::make_unique<ResourceConfig>(
             "rdk:component:audioout", "", test_name_, attributes, "",
-            Model("viam", "audio", "speaker"), LinkConfig{}, log_level::info
+            Model("viam", "system-audio", "speaker"), LinkConfig{}, log_level::info
         );
 
         SetupDefaultPortAudioBehavior();
@@ -38,7 +38,7 @@ TEST_F(SpeakerTest, ValidateWithValidConfig) {
 
   ResourceConfig valid_config(
       "rdk:component:audioout", "", test_name_, attributes, "",
-      Model("viam", "audio", "speaker"), LinkConfig{}, log_level::info);
+  speaker::Speaker::model, LinkConfig{}, log_level::info);
 
   EXPECT_NO_THROW({
     auto result = speaker::Speaker::validate(valid_config);
@@ -53,7 +53,7 @@ TEST_F(SpeakerTest, ValidateWithValidOptionalAttributes) {
 
   ResourceConfig valid_config(
       "rdk:component:speaker", "", test_name_, attributes, "",
-      Model("viam", "audio", "speaker"), LinkConfig{}, log_level::info);
+   speaker::Speaker::model, LinkConfig{}, log_level::info);
 
   EXPECT_NO_THROW({
     auto result = speaker::Speaker::validate(valid_config);
@@ -68,7 +68,7 @@ TEST_F(SpeakerTest, ValidateWithDeviceNameNotString) {
 
   ResourceConfig invalid_config(
       "rdk:component:speaker", "", test_name_, attributes, "",
-      Model("viam", "audio", "speaker"), LinkConfig{}, log_level::info);
+  speaker::Speaker::model, LinkConfig{}, log_level::info);
 
   EXPECT_THROW({
     speaker::Speaker::validate(invalid_config); },
@@ -83,7 +83,7 @@ TEST_F(SpeakerTest, ValidateWithLatencyNotDouble) {
 
   ResourceConfig invalid_config(
       "rdk:component:speaker", "", test_name_, attributes, "",
-      Model("viam", "audio", "speaker"), LinkConfig{}, log_level::info);
+    speaker::Speaker::model, LinkConfig{}, log_level::info);
 
   EXPECT_THROW({
     speaker::Speaker::validate(invalid_config); },
@@ -105,7 +105,7 @@ TEST_F(SpeakerTest, GetPropertiesReturnsCorrectValues) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+        speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -136,7 +136,7 @@ TEST_F(SpeakerTest, PlayWithValidPCM16Data) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -178,7 +178,7 @@ TEST_F(SpeakerTest, PlayWithUnsupportedCodec) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -210,7 +210,7 @@ TEST_F(SpeakerTest, PlayWithOddByteCount) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -243,7 +243,7 @@ TEST_F(SpeakerTest, PlayEmptyData) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -409,7 +409,7 @@ TEST_F(SpeakerTest, CodecConversion_PCM16) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -463,7 +463,7 @@ TEST_F(SpeakerTest, CodecConversion_PCM32) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -517,7 +517,7 @@ TEST_F(SpeakerTest, CodecConversion_PCM32Float) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -573,7 +573,7 @@ TEST_F(SpeakerTest, CodecConversion_PCM32_InvalidSize) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -606,7 +606,7 @@ TEST_F(SpeakerTest, CodecConversion_PCM32Float_InvalidSize) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -639,7 +639,7 @@ TEST_F(SpeakerTest, CodecConversion_SampleRateMismatch) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );
@@ -672,7 +672,7 @@ TEST_F(SpeakerTest, CodecConversion_ChannelMismatch) {
         test_name_,
         attributes,
         "",
-        Model("viam", "audio", "speaker"),
+    speaker::Speaker::model,
         LinkConfig{},
         log_level::info
     );

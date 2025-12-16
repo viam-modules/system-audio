@@ -1,4 +1,4 @@
-# Module audio
+# Module system-audio
 
 This [Viam module](https://docs.viam.com/registry/) provides audio input and output capabilities using the [PortAudio](http://www.portaudio.com/) library. It can capture and play audio from microphones and speakers on your machine.
 
