@@ -98,7 +98,8 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                               sample_rate,
                               info->maxInputChannels,
                               count_input);
-        } else if (info->maxOutputChannels > 0) {
+        }
+        if (info->maxOutputChannels > 0) {
             add_device_config(speaker::Speaker::model,
                               "audio_out",
                               "speaker",
