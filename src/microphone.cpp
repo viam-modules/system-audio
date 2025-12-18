@@ -115,7 +115,7 @@ Microphone::~Microphone() {
     }
 }
 
-vsdk::Model Microphone::model("viam", "audio", "microphone");
+vsdk::Model Microphone::model("viam", "system-audio", "microphone");
 
 std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
     auto attrs = cfg.attributes();

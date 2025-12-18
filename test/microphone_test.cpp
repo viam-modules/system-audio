@@ -21,7 +21,7 @@ protected:
         auto attributes = ProtoStruct{};
         test_config_ = std::make_unique<ResourceConfig>(
             "rdk:component:audioin", "", test_name_, attributes, "",
-            Model("viam", "audio", "microphone"), LinkConfig{}, log_level::info
+            microphone::Microphone::model, LinkConfig{}, log_level::info
         );
     }
     ResourceConfig createConfig(const std::string& device_name = testDeviceName,
@@ -44,7 +44,7 @@ protected:
 
         return ResourceConfig(
             "rdk:component:audioin", "", "test_microphone", attrs, "",
-            Model("viam", "audio", "microphone"), LinkConfig{}, log_level::info
+         microphone::Microphone::model, LinkConfig{}, log_level::info
         );
     }
 
@@ -252,7 +252,7 @@ TEST_F(MicrophoneTest, GetPropertiesReturnsCorrectValues) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
@@ -277,7 +277,7 @@ TEST_F(MicrophoneTest, ModelExists) {
   EXPECT_NO_THROW({
     auto model_copy = model; // Test copy constructor
   });
-  EXPECT_EQ(model.to_string(), "viam:audio:microphone");
+  EXPECT_EQ(model.to_string(), "viam:system-audio:microphone");
 }
 
 TEST_F(MicrophoneTest, SetsCorrectFields) {
@@ -297,7 +297,7 @@ TEST_F(MicrophoneTest, SetsCorrectFields) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
@@ -335,7 +335,7 @@ TEST_F(MicrophoneTest, DefaultsToZeroLatencyWhenNotSpecified) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
@@ -357,7 +357,7 @@ TEST_F(MicrophoneTest, DefaultsToFiftyMsHistoricalThrottleWhenNotSpecified) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
@@ -381,7 +381,7 @@ TEST_F(MicrophoneTest, SetsHistoricalThrottleFromConfig) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
@@ -402,7 +402,7 @@ TEST_F(MicrophoneTest, UsesDeviceDefaultSampleRate) {
         "test_microphone",
         attributes,
         "",
-        Model("viam", "audio", "microphone"),
+        microphone::Microphone::model,
         LinkConfig{},
         log_level::info
     );
