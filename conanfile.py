@@ -14,7 +14,7 @@ class audio(ConanFile):
     name = "viam-audio"
 
     license = "Apache-2.0"
-    url = "https://github.com/viam-modules/audio"
+    url = "https://github.com/viam-modules/system-audio"
     package_type = "application"
     settings = "os", "compiler", "build_type", "arch"
 
