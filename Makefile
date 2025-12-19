@@ -7,9 +7,6 @@ default: module.tar.gz
 
 build: $(BIN)
 
-build/build.ninja: build CMakeLists.txt
-	cd build && cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-
 $(BIN): conanfile.py src/* bin/* test/*
 	bin/build.sh
 

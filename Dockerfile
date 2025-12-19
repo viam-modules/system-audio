@@ -51,14 +51,3 @@ RUN apt-get -y --no-install-recommends install \
 
 RUN python3 -m pip install conan
 RUN conan profile detect
-
-# NOTE: If you update the `viam-cpp-sdk` dependency here, it
-# should also be updated in `bin/setup.{sh,ps1}`, and in the conanfile.py.
-RUN git clone https://github.com/viamrobotics/viam-cpp-sdk.git \
-    --branch releases/v0.21.0 --depth=1 && \
-    cd viam-cpp-sdk && \
-    conan create . \
-    --build=missing \
-    -o:a "&:shared=False" \
-    -s:a build_type=Release \
-    -s:a compiler.cppstd=17
