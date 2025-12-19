@@ -1,14 +1,15 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
 
-.PHONY: build setup test clean lint conan-pkg
+DOCKER_REGISTRY := ghcr.io
+DOCKER_IMAGE := viam-modules/audio/viam-audio
+DOCKER_VERSION := $(shell grep -oP 'viam-audio:\K[0-9]+\.[0-9]+\.[0-9]+' Dockerfile | head -1 || echo "latest")
+
+.PHONY: build setup test clean lint conan-pkg docker-arm64-ci
 
 default: module.tar.gz
 
 build: $(BIN)
-
-build/build.ninja: build CMakeLists.txt
-	cd build && cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 
 $(BIN): conanfile.py src/* bin/* test/*
 	bin/build.sh
@@ -44,3 +45,12 @@ module.tar.gz: conan-pkg meta.json
 
 lint:
 	./bin/lint.sh
+
+# Docker target for CI
+docker-arm64-ci:
+	docker build --platform linux/arm64 \
+		-t $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(DOCKER_VERSION) \
+		-t $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):latest \
+		-f Dockerfile .
+	docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):$(DOCKER_VERSION)
+	docker push $(DOCKER_REGISTRY)/$(DOCKER_IMAGE):latest

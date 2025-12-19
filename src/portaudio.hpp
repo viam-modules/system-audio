@@ -117,6 +117,34 @@ static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa
         if (info->maxInputChannels > 0) {
             VIAM_SDK_LOG(info) << info->name << " default sample rate: " << info->defaultSampleRate
                                << " max input channels: " << info->maxInputChannels;
+
+            // Check supported formats
+            PaStreamParameters params;
+            params.device = i;
+            params.channelCount = 1;
+            params.suggestedLatency = info->defaultLowInputLatency;
+            params.hostApiSpecificStreamInfo = nullptr;
+
+            std::string supported_formats = "  Supported formats: ";
+            bool first = true;
+
+            const struct { PaSampleFormat format; const char* name; } formats[] = {
+                {paInt16, "int16"},
+                {paInt24, "int24"},
+                {paInt32, "int32"},
+                {paFloat32, "float32"}
+            };
+
+            for (const auto& fmt : formats) {
+                params.sampleFormat = fmt.format;
+                if (Pa_IsFormatSupported(&params, nullptr, info->defaultSampleRate) == paFormatIsSupported) {
+                    if (!first) supported_formats += ", ";
+                    supported_formats += fmt.name;
+                    first = false;
+                }
+            }
+
+            VIAM_SDK_LOG(info) << supported_formats;
         }
     }
 
