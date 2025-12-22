@@ -1,12 +1,17 @@
 #include "microphone.hpp"
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 #include <thread>
 #include "audio_buffer.hpp"
 #include "audio_codec.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "mp3_encoder.hpp"
+
+#ifdef __APPLE__
+#include <unistd.h>  // for geteuid()
+#endif
 
 namespace microphone {
 using audio::codec::AudioCodec;
@@ -83,6 +88,18 @@ class StreamGuard {
 
 Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), active_streams_(0) {
+
+#ifdef __APPLE__
+    if (geteuid() == 0) {
+        std::ostringstream error_msg;
+        error_msg << "Cannot initialize microphone: Running as root on macOS. "
+                  << "macOS privacy restrictions (TCC) prevent root processes from accessing the microphone. "
+                  << "Please run viam-server without sudo.";
+        VIAM_SDK_LOG(error) << error_msg.str();
+        throw std::runtime_error(error_msg.str());
+    }
+#endif
+
     auto setup = audio::utils::setup_audio_device<audio::InputStreamContext>(cfg, audio::utils::StreamDirection::Input, AudioCallback, pa_);
 
     // Set new configuration and start stream under lock
