@@ -38,32 +38,5 @@ fi
 
 conan profile detect || echo "Conan is already installed"
 
-if [ ! -d "tmp_cpp_sdk/viam-cpp-sdk" ]; then
-  # Clone the C++ SDK repo
-  mkdir -p tmp_cpp_sdk
-  pushd tmp_cpp_sdk
-  git clone https://github.com/viamrobotics/viam-cpp-sdk.git
-  pushd viam-cpp-sdk
-else
-  pushd tmp_cpp_sdk
-  pushd viam-cpp-sdk
-fi
-
-# NOTE: If you change this version, also change it in the `conanfile.py` requirements
-git checkout releases/v0.21.0
-
-# Build the C++ SDK repo
-#
-# We want a static binary, so we turn off shared. Elect for C++17
-# compilation, since it seems some of the dependencies we pick mandate
-# it anyway.
-conan create . \
-      --build=missing \
-      -o:a "&:shared=False" \
-      -s:a build_type=Release \
-      -s:a compiler.cppstd=17
-
-# Cleanup
-popd  # viam-cpp-sdk
-popd # temp-cpp-sdk
-rm -rf tmp_cpp_sdk
+# Add Viam Conan remote to download pre-built packages
+conan remote add viamconan https://viam.jfrog.io/artifactory/api/conan/viamconan --index 0 || echo "Viam conan remote already exists"

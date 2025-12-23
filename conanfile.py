@@ -14,7 +14,7 @@ class audio(ConanFile):
     name = "viam-audio"
 
     license = "Apache-2.0"
-    url = "https://github.com/viam-modules/audio"
+    url = "https://github.com/viam-modules/system-audio"
     package_type = "application"
     settings = "os", "compiler", "build_type", "arch"
 
@@ -42,9 +42,6 @@ class audio(ConanFile):
             self.options["*"].shared = False
 
     def requirements(self):
-        # NOTE: If you update the `viam-cpp-sdk` dependency here, it
-        # should also be updated in `bin/setup.{sh,ps1}` and in the
-        # docker file.
         self.requires("viam-cpp-sdk/0.21.0")
         self.requires("libmp3lame/3.100")
         self.requires("soxr/0.1.3")

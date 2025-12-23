@@ -8,7 +8,7 @@ set -euxo pipefail
 # Clean up any prior build
 rm -rf build-conan
 
-# Build the viam-orbbec module
+# Build system-audio module
 #
 # We want a static binary, so we turn off shared. Elect for C++17
 # compilation, since it seems some of the dependencies we pick mandate
