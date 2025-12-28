@@ -1,16 +1,10 @@
 OUTPUT_NAME = audio-module
-BIN := build-conan/build/RelWithDebInfo/audio-module
 
-.PHONY: build setup test clean lint conan-pkg
+.PHONY: setup test clean lint conan-pkg
 
 default: module.tar.gz
 
-build: $(BIN)
-
-$(BIN): conanfile.py src/* bin/* test/*
-	bin/build.sh
-
-test: $(BIN)
+test: conan-pkg
 	cd build-conan/build/RelWithDebInfo && ctest --output-on-failure
 
 clean:
