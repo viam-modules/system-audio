@@ -30,7 +30,6 @@ conan-pkg-asan:
 	--build=boost \
 	--build=missing
 
-# Test with AddressSanitizer
 test-asan: conan-pkg-asan
 	cd build-conan/build/RelWithDebInfo && \
 	ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1:symbolize=1 ctest --output-on-failure
