@@ -56,7 +56,9 @@ function(audio_add_gtest SOURCE_FILE_NAME)
         ${CMAKE_SOURCE_DIR}/src
     )
 
-    gtest_discover_tests(${TEST_EXECUTABLE_NAME})
+    gtest_discover_tests(${TEST_EXECUTABLE_NAME}
+        DISCOVERY_TIMEOUT 60  # Increase timeout for ASAN builds
+    )
 endfunction()
 
 audio_add_gtest(microphone_test.cpp)

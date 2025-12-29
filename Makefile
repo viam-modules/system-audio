@@ -1,7 +1,7 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
 
-.PHONY: build setup test clean lint conan-pkg
+.PHONY: build setup test clean lint conan-pkg test-asan
 
 default: module.tar.gz
 
@@ -12,6 +12,28 @@ $(BIN): conanfile.py src/* bin/* test/*
 
 test: $(BIN)
 	cd build-conan/build/RelWithDebInfo && ctest --output-on-failure
+
+# Build with AddressSanitizer
+# Run with following runtime options:
+# ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1:symbolize=1
+conan-pkg-asan:
+	test -f ./venv/bin/activate && . ./venv/bin/activate; \
+	CXXFLAGS="-fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g" \
+	CFLAGS="-fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g" \
+	LDFLAGS="-fsanitize=address" \
+	conan create . \
+	-o:a "viam-cpp-sdk/*:shared=False" \
+	-o "boost/*:without_locale=True" \
+	-o "boost/*:without_stacktrace=True" \
+	-s:a build_type=RelWithDebInfo \
+	-s:a compiler.cppstd=17 \
+	--build=boost \
+	--build=missing
+
+# Test with AddressSanitizer
+test-asan: conan-pkg-asan
+	cd build-conan/build/RelWithDebInfo && \
+	ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1:symbolize=1 ctest --output-on-failure
 
 clean:
 	rm -rf build-conan/build/RelWithDebInfo module.tar.gz
