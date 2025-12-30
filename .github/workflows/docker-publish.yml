@@ -1,0 +1,58 @@
+name: Publish Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'Dockerfile'
+
+jobs:
+  docker:
+    name: Build Docker Image
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 45
+    runs-on: ubuntu-4cpu-arm
+
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Get next version
+        id: version
+        run: |
+          # Fetch latest version from registry
+          LATEST_VERSION=$(gh api /orgs/viam-modules/packages/container/audio%2Fviam-audio/versions \
+            --jq '.[].metadata.container.tags[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' \
+            2>/dev/null | sort -V | tail -1)
+
+          # Increment patch version
+          NEXT_VERSION=$(echo "$LATEST_VERSION" | awk -F. '{$NF = $NF + 1;} 1' OFS=.)
+
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "next=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest version: $LATEST_VERSION"
+          echo "Next version: $NEXT_VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/viam-modules/audio/viam-audio:${{ steps.version.outputs.next }}
+            ghcr.io/viam-modules/audio/viam-audio:latest

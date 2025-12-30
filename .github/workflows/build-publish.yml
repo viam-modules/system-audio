@@ -23,7 +23,7 @@ jobs:
           - platform: linux/arm64
             os: ubuntu-4cpu-arm
             container:
-              image: ghcr.io/viam-modules/audio/viam-audio:0.0.2
+              image: ghcr.io/viam-modules/audio/viam-audio:latest
             artifact-name: module-linux-arm64
 
     runs-on: ${{ matrix.os }}
