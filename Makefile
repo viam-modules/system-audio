@@ -1,10 +1,5 @@
 OUTPUT_NAME = audio-module
 BIN := build-conan/build/RelWithDebInfo/audio-module
-
-DOCKER_REGISTRY := ghcr.io
-DOCKER_IMAGE := viam-modules/audio/viam-audio
-DOCKER_VERSION ?= latest
-
 .PHONY: build setup test clean lint conan-pkg
 
 default: module.tar.gz
