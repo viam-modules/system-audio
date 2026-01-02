@@ -94,19 +94,6 @@ class RealPortAudio : public PortAudioInterface {
 };
 
 static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr) {
-#ifdef __linux__
-    VIAM_SDK_LOG(info) << "here checking pa_alsa-lpughw";
-    // Use plughw for auto sample rate conversion on Linux
-    // Users can override default by setting PA_ALSA_PLUGHW=0 in module config
-    const char* existing_value = std::getenv("PA_ALSA_PLUGHW");
-    if (existing_value == nullptr) {
-        setenv("PA_ALSA_PLUGHW", "1", 0);
-        VIAM_SDK_LOG(info) << "Enabled ALSA resampling (PA_ALSA_PLUGHW=1). Set PA_ALSA_PLUGHW=0 in module environment to disable.";
-    } else {
-        VIAM_SDK_LOG(info) << "PA_ALSA_PLUGHW already set to: " << existing_value;
-    }
-#endif
-
     // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
@@ -118,6 +105,19 @@ static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa
         VIAM_SDK_LOG(error) << "[startPortAudio] " << buffer.str();
         throw std::runtime_error(buffer.str());
     }
+
+#ifdef __linux__
+    // Set PA_ALSA_PLUGHW AFTER Pa_Initialize() to avoid breaking device enumeration
+    // Setting it before initialization prevents PortAudio from finding devices with PipeWire/PulseAudio
+    // When set after, enumeration uses hw: devices (works everywhere) but opening uses plughw: (gets conversion)
+    const char* existing_value = std::getenv("PA_ALSA_PLUGHW");
+    if (existing_value == nullptr) {
+        setenv("PA_ALSA_PLUGHW", "1", 0);
+        VIAM_SDK_LOG(info) << "Enabled ALSA resampling (PA_ALSA_PLUGHW=1). Set PA_ALSA_PLUGHW=0 in module environment to disable.";
+    } else {
+        VIAM_SDK_LOG(info) << "PA_ALSA_PLUGHW already set to: " << existing_value;
+    }
+#endif
 
     int numDevices = Pa_GetDeviceCount();
     VIAM_SDK_LOG(info) << "Available input devices:";
