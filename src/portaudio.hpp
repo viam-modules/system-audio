@@ -95,6 +95,7 @@ class RealPortAudio : public PortAudioInterface {
 
 static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa = nullptr) {
 #ifdef __linux__
+    VIAM_SDK_LOG(info) << "here checking pa_alsa-lpughw";
     // Use plughw for auto sample rate conversion on Linux
     // Users can override default by setting PA_ALSA_PLUGHW=0 in module config
     const char* existing_value = std::getenv("PA_ALSA_PLUGHW");
