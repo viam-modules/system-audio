@@ -106,7 +106,9 @@ static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa
         throw std::runtime_error(buffer.str());
     }
 
+    VIAM_SDK_LOG(info) << "Checking PA_ALSA_PLUGHW (this should always print)";
 #ifdef __linux__
+    VIAM_SDK_LOG(info) << "__linux__ is defined, setting PA_ALSA_PLUGHW";
     // Set PA_ALSA_PLUGHW AFTER Pa_Initialize() to avoid breaking device enumeration
     // Setting it before initialization prevents PortAudio from finding devices with PipeWire/PulseAudio
     // When set after, enumeration uses hw: devices (works everywhere) but opening uses plughw: (gets conversion)
@@ -117,6 +119,8 @@ static inline void startPortAudio(const audio::portaudio::PortAudioInterface* pa
     } else {
         VIAM_SDK_LOG(info) << "PA_ALSA_PLUGHW already set to: " << existing_value;
     }
+#else
+    VIAM_SDK_LOG(info) << "__linux__ NOT defined - PA_ALSA_PLUGHW not set";
 #endif
 
     int numDevices = Pa_GetDeviceCount();
