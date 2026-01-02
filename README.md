@@ -7,6 +7,39 @@ This [Viam module](https://docs.viam.com/registry/) provides audio input and out
 - **Linux x64**
 - **Linux ARM64**
 
+## Linux ALSA Configuration
+
+### PA_ALSA_PLUGHW Environment Variable
+
+On Linux, the module uses ALSA's `plughw` device by default, which enables automatic sample rate conversion. This allows the audio module to handle cases where the requested sample rate doesn't match the hardware's native rate.
+
+**Default behavior:** Enabled (`PA_ALSA_PLUGHW=1`)
+
+**To disable ALSA resampling:**
+Add the environment variable to your module configuration:
+
+```json
+{
+  "modules": [
+    {
+      "type": "registry",
+      "name": "viam_system-audio",
+      "module_id": "viam:system-audio",
+      "env": {
+        "PA_ALSA_PLUGHW": "0"
+      }
+    }
+  ]
+}
+```
+
+**When to disable:**
+- You need direct hardware access without software resampling
+- You're handling sample rate conversion in your own application
+- Debugging audio issues related to ALSA
+
+**Note:** Disabling `plughw` may cause errors if your requested sample rate doesn't match the hardware's native rate.
+
 ## Model viam:audio:microphone
 
 ### Configuration

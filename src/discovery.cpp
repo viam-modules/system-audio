@@ -75,7 +75,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
 
         std::stringstream deviceInfoString;
         deviceInfoString << "discovered " << device_name << ", default sample rate: " << sample_rate << ", max channels: " << num_channels;
-        VIAM_RESOURCE_LOG(debug) << deviceInfoString.str();
+        VIAM_SDK_LOG(debug) << deviceInfoString.str();
 
         vsdk::ResourceConfig config =
             create_device_config(component_type, device_type, api, device_name, sample_rate, num_channels, counter, model);
