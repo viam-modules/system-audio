@@ -54,7 +54,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     // Member variables
     std::string device_name_;
     PaDeviceIndex device_index_;
-    int sample_rate_;  // Device's native sample rate (what stream is opened at)
+    int sample_rate_;            // Device's native sample rate (what stream is opened at)
     int requested_sample_rate_;  // User's requested sample rate (may differ from device rate)
     int num_channels_;
     double latency_;

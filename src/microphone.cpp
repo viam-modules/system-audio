@@ -108,7 +108,8 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
         device_name_ = setup.stream_params.device_name;
         device_index_ = setup.stream_params.device_index;
         sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
-        requested_sample_rate_ = setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
+        requested_sample_rate_ =
+            setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
         num_channels_ = setup.stream_params.num_channels;
         latency_ = setup.stream_params.latency_seconds;
         audio_context_ = setup.audio_context;
@@ -225,7 +226,8 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             device_name_ = setup.stream_params.device_name;
             device_index_ = setup.stream_params.device_index;
             sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
-            requested_sample_rate_ = setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
+            requested_sample_rate_ = setup.config_params.sample_rate.value_or(
+                setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
             num_channels_ = setup.stream_params.num_channels;
             latency_ = setup.stream_params.latency_seconds;
             audio_context_ = setup.audio_context;
@@ -396,11 +398,11 @@ void Microphone::get_audio(std::string const& codec,
             final_sample_count = samples_read;
         }
 
-
         vsdk::AudioIn::audio_chunk chunk;
 
         // Convert from int16 (captured format) to requested codec
-        audio::codec::encode_audio_chunk(codec_enum, final_buffer.data(), final_sample_count, chunk_start_position, mp3_ctx, chunk.audio_data);
+        audio::codec::encode_audio_chunk(
+            codec_enum, final_buffer.data(), final_sample_count, chunk_start_position, mp3_ctx, chunk.audio_data);
 
         chunk.info.codec = codec;
         chunk.info.sample_rate_hz = requested_sample_rate;

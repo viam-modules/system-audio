@@ -1,7 +1,7 @@
 #pragma once
 
-#include "portaudio.h"
 #include <cstdlib>
+#include "portaudio.h"
 
 namespace audio {
 namespace portaudio {

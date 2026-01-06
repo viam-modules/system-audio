@@ -1,8 +1,8 @@
 #pragma once
 
-#include "soxr.h"
-#include <vector>
 #include <sstream>
+#include <vector>
+#include "soxr.h"
 
 // Resample PCM16 audio from one sample rate to another
 // input_samples: pointer to input int16_t samples
