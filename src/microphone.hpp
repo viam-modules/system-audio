@@ -10,10 +10,10 @@
 #include <viam/sdk/components/audio_in.hpp>
 #include <viam/sdk/config/resource.hpp>
 #include <viam/sdk/resource/reconfigurable.hpp>
+#include "audio_codec.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "portaudio.h"
-#include "audio_codec.hpp"
 #include "portaudio.hpp"
 
 namespace microphone {
@@ -53,14 +53,14 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
     void setup_stream_params(audio::codec::AudioCodec codec_enum,
-                            MP3EncoderContext& mp3_ctx,
-                            bool is_reconfigure,
-                            int& stream_sample_rate,
-                            int& requested_sample_rate,
-                            int& stream_num_channels,
-                            int& stream_historical_throttle_ms,
-                            int& samples_per_chunk,
-                            int& device_samples_per_chunk);
+                             MP3EncoderContext& mp3_ctx,
+                             bool is_reconfigure,
+                             int& stream_sample_rate,
+                             int& requested_sample_rate,
+                             int& stream_num_channels,
+                             int& stream_historical_throttle_ms,
+                             int& samples_per_chunk,
+                             int& device_samples_per_chunk);
 
     // Member variables
     std::string device_name_;

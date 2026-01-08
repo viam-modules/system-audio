@@ -126,8 +126,8 @@ void Microphone::setup_stream_params(AudioCodec codec_enum,
     // Validate chunk size
     if (samples_per_chunk <= 0) {
         std::ostringstream buffer;
-        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk
-               << " with sample rate: " << stream_sample_rate << " num channels: " << stream_num_channels;
+        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk << " with sample rate: " << stream_sample_rate
+               << " num channels: " << stream_num_channels;
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::runtime_error(buffer.str());
     }
@@ -338,9 +338,15 @@ void Microphone::get_audio(std::string const& codec,
     uint64_t last_chunk_end_position;
 
     // Setup initial stream parameters and initialize encoder
-    setup_stream_params(codec_enum, mp3_ctx, false, stream_sample_rate, requested_sample_rate,
-                       stream_num_channels, stream_historical_throttle_ms,
-                       samples_per_chunk, device_samples_per_chunk);
+    setup_stream_params(codec_enum,
+                        mp3_ctx,
+                        false,
+                        stream_sample_rate,
+                        requested_sample_rate,
+                        stream_num_channels,
+                        stream_historical_throttle_ms,
+                        samples_per_chunk,
+                        device_samples_per_chunk);
 
     while (true) {
         // Check if audio_context_ changed (device reconfigured)
@@ -363,9 +369,15 @@ void Microphone::get_audio(std::string const& codec,
 
         // Reconfigure stream parameters if context changed
         if (context_changed) {
-            setup_stream_params(codec_enum, mp3_ctx, true, stream_sample_rate, requested_sample_rate,
-                               stream_num_channels, stream_historical_throttle_ms,
-                               samples_per_chunk, device_samples_per_chunk);
+            setup_stream_params(codec_enum,
+                                mp3_ctx,
+                                true,
+                                stream_sample_rate,
+                                requested_sample_rate,
+                                stream_num_channels,
+                                stream_historical_throttle_ms,
+                                samples_per_chunk,
+                                device_samples_per_chunk);
         }
 
         // Check if we have enough samples for a full chunk
