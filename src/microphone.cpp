@@ -8,6 +8,7 @@
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "mp3_encoder.hpp"
+#include "resample.hpp"
 
 #ifdef __APPLE__
 #include <unistd.h>  // for geteuid()
@@ -86,6 +87,52 @@ class StreamGuard {
 
 // === Microphone Class Implementation ===
 
+void Microphone::setup_stream_params(AudioCodec codec_enum,
+                                     MP3EncoderContext& mp3_ctx,
+                                     bool is_reconfigure,
+                                     int& stream_sample_rate,
+                                     int& requested_sample_rate,
+                                     int& stream_num_channels,
+                                     int& stream_historical_throttle_ms,
+                                     int& samples_per_chunk,
+                                     int& device_samples_per_chunk) {
+    // Get current stream parameters
+    {
+        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+        stream_sample_rate = sample_rate_;
+        requested_sample_rate = requested_sample_rate_;
+        stream_num_channels = num_channels_;
+        stream_historical_throttle_ms = historical_throttle_ms_;
+    }
+
+    // Initialize or reinitialize MP3 encoder if needed
+    if (codec_enum == AudioCodec::MP3) {
+        if (is_reconfigure) {
+            cleanup_mp3_encoder(mp3_ctx);
+        }
+        initialize_mp3_encoder(mp3_ctx, requested_sample_rate, stream_num_channels);
+    }
+
+    // Calculate chunk size based on codec
+    samples_per_chunk = calculate_chunk_size(codec_enum, requested_sample_rate, stream_num_channels, &mp3_ctx);
+
+    // Calculate how many samples to read from device buffer
+    device_samples_per_chunk = samples_per_chunk;
+    if (stream_sample_rate != requested_sample_rate) {
+        // Adjust read size to account for resampling
+        device_samples_per_chunk = std::lround(samples_per_chunk * stream_sample_rate / requested_sample_rate);
+    }
+
+    // Validate chunk size
+    if (samples_per_chunk <= 0) {
+        std::ostringstream buffer;
+        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk << " with sample rate: " << stream_sample_rate
+               << " num channels: " << stream_num_channels;
+        VIAM_SDK_LOG(error) << buffer.str();
+        throw std::runtime_error(buffer.str());
+    }
+}
+
 Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), active_streams_(0) {
 #ifdef __APPLE__
@@ -106,7 +153,9 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         device_name_ = setup.stream_params.device_name;
         device_index_ = setup.stream_params.device_index;
-        sample_rate_ = setup.stream_params.sample_rate;
+        sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
+        requested_sample_rate_ =
+            setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
         num_channels_ = setup.stream_params.num_channels;
         latency_ = setup.stream_params.latency_seconds;
         audio_context_ = setup.audio_context;
@@ -222,7 +271,9 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             audio::utils::restart_stream(stream_, setup.stream_params, pa_);
             device_name_ = setup.stream_params.device_name;
             device_index_ = setup.stream_params.device_index;
-            sample_rate_ = setup.stream_params.sample_rate;
+            sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
+            requested_sample_rate_ = setup.config_params.sample_rate.value_or(
+                setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
             num_channels_ = setup.stream_params.num_channels;
             latency_ = setup.stream_params.latency_seconds;
             audio_context_ = setup.audio_context;
@@ -276,37 +327,30 @@ void Microphone::get_audio(std::string const& codec,
     read_position = get_initial_read_position(stream_context, previous_timestamp);
 
     // Get sample rate and channels - will be updated if context changes
-    int stream_sample_rate = 0;
+    int stream_sample_rate = 0;  // Device's native sample rate
     int stream_num_channels = 0;
     int stream_historical_throttle_ms = 0;
-    {
-        std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        stream_sample_rate = sample_rate_;
-        stream_num_channels = num_channels_;
-        stream_historical_throttle_ms = historical_throttle_ms_;
-    }
+    int requested_sample_rate = 0;
+    int samples_per_chunk = 0;
+    int device_samples_per_chunk = 0;
 
     MP3EncoderContext mp3_ctx;
     uint64_t last_chunk_end_position;
 
-    // Initialize MP3 encoder if needed
-    if (codec_enum == AudioCodec::MP3) {
-        initialize_mp3_encoder(mp3_ctx, stream_sample_rate, stream_num_channels);
-    }
-
-    // Calculate chunk size based on codec
-    int samples_per_chunk = calculate_chunk_size(codec_enum, stream_sample_rate, stream_num_channels, &mp3_ctx);
-
-    if (samples_per_chunk <= 0) {
-        std::ostringstream buffer;
-        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk << " with sample rate: " << stream_sample_rate
-               << " num channels: " << stream_num_channels;
-        VIAM_SDK_LOG(error) << buffer.str();
-        throw std::runtime_error(buffer.str());
-    }
+    // Setup initial stream parameters and initialize encoder
+    setup_stream_params(codec_enum,
+                        mp3_ctx,
+                        false,
+                        stream_sample_rate,
+                        requested_sample_rate,
+                        stream_num_channels,
+                        stream_historical_throttle_ms,
+                        samples_per_chunk,
+                        device_samples_per_chunk);
 
     while (true) {
         // Check if audio_context_ changed (device reconfigured)
+        bool context_changed = false;
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
 
@@ -314,29 +358,7 @@ void Microphone::get_audio(std::string const& codec,
             if (audio_context_ != stream_context) {
                 if (stream_context != nullptr) {
                     VIAM_SDK_LOG(info) << "Detected stream change (device reconfigure)";
-
-                    // Update sample rate and channels from new config
-                    stream_sample_rate = sample_rate_;
-                    stream_num_channels = num_channels_;
-                    stream_historical_throttle_ms = historical_throttle_ms_;
-
-                    // Reinitialize MP3 encoder with new config if needed
-                    if (codec_enum == AudioCodec::MP3) {
-                        cleanup_mp3_encoder(mp3_ctx);
-                        initialize_mp3_encoder(mp3_ctx, stream_sample_rate, stream_num_channels);
-                        VIAM_SDK_LOG(info) << "Reinitialized MP3 encoder with new config";
-                    }
-
-                    // Recalculate chunk size using new config
-                    samples_per_chunk = calculate_chunk_size(codec_enum, stream_sample_rate, stream_num_channels, &mp3_ctx);
-
-                    if (samples_per_chunk <= 0) {
-                        std::ostringstream buffer;
-                        buffer << "calculated invalid samples_per_chunk: " << samples_per_chunk
-                               << " with sample rate: " << stream_sample_rate << " num channels: " << stream_num_channels;
-                        VIAM_SDK_LOG(error) << buffer.str();
-                        throw std::runtime_error(buffer.str());
-                    }
+                    context_changed = true;
                 }
                 // Switch to new context and reset read position
                 stream_context = audio_context_;
@@ -345,34 +367,59 @@ void Microphone::get_audio(std::string const& codec,
             }
         }
 
+        // Reconfigure stream parameters if context changed
+        if (context_changed) {
+            setup_stream_params(codec_enum,
+                                mp3_ctx,
+                                true,
+                                stream_sample_rate,
+                                requested_sample_rate,
+                                stream_num_channels,
+                                stream_historical_throttle_ms,
+                                samples_per_chunk,
+                                device_samples_per_chunk);
+        }
+
         // Check if we have enough samples for a full chunk
         const uint64_t write_pos = stream_context->get_write_position();
         const uint64_t available_samples = write_pos - read_position;
 
         // Wait until we have a full chunk worth of samples
-        if (available_samples < samples_per_chunk) {
+        if (available_samples < device_samples_per_chunk) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 
-        std::vector<int16_t> temp_buffer(samples_per_chunk);
+        std::vector<int16_t> temp_buffer(device_samples_per_chunk);
         uint64_t chunk_start_position = read_position;
         // Read exactly one chunk worth of samples
-        const int samples_read = stream_context->read_samples(temp_buffer.data(), samples_per_chunk, read_position);
+        const int samples_read = stream_context->read_samples(temp_buffer.data(), device_samples_per_chunk, read_position);
 
-        if (samples_read < samples_per_chunk) {
+        if (samples_read < device_samples_per_chunk) {
             // Shouldn't happen since we checked available_samples, but to be safe
-            VIAM_SDK_LOG(warn) << "Read fewer samples than expected: " << samples_read << " vs " << samples_per_chunk;
+            VIAM_SDK_LOG(warn) << "Read fewer samples than expected: " << samples_read << " vs " << device_samples_per_chunk;
             continue;
+        }
+
+        std::vector<int16_t> final_buffer;
+        int final_sample_count;
+        if (requested_sample_rate != stream_sample_rate) {
+            // Resample from device rate to requested rate
+            resample_audio(stream_sample_rate, requested_sample_rate, stream_num_channels, temp_buffer.data(), samples_read, final_buffer);
+            final_sample_count = final_buffer.size();
+        } else {
+            final_buffer = std::move(temp_buffer);
+            final_sample_count = samples_read;
         }
 
         vsdk::AudioIn::audio_chunk chunk;
 
         // Convert from int16 (captured format) to requested codec
-        audio::codec::encode_audio_chunk(codec_enum, temp_buffer.data(), samples_read, chunk_start_position, mp3_ctx, chunk.audio_data);
+        audio::codec::encode_audio_chunk(
+            codec_enum, final_buffer.data(), final_sample_count, chunk_start_position, mp3_ctx, chunk.audio_data);
 
         chunk.info.codec = codec;
-        chunk.info.sample_rate_hz = stream_sample_rate;
+        chunk.info.sample_rate_hz = requested_sample_rate;
         chunk.info.num_channels = stream_num_channels;
         chunk.sequence_number = sequence++;
 
@@ -448,7 +495,7 @@ void Microphone::get_audio(std::string const& codec,
             vsdk::AudioIn::audio_chunk final_chunk;
             final_chunk.audio_data = std::move(final_data);
             final_chunk.info.codec = codec;
-            final_chunk.info.sample_rate_hz = stream_sample_rate;
+            final_chunk.info.sample_rate_hz = requested_sample_rate;
             final_chunk.info.num_channels = stream_num_channels;
             final_chunk.sequence_number = sequence++;
 
@@ -480,7 +527,7 @@ viam::sdk::audio_properties Microphone::get_properties(const viam::sdk::ProtoStr
     props.supported_codecs = {
         vsdk::audio_codecs::PCM_16, vsdk::audio_codecs::PCM_32, vsdk::audio_codecs::PCM_32_FLOAT, vsdk::audio_codecs::MP3};
     std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-    props.sample_rate_hz = sample_rate_;
+    props.sample_rate_hz = requested_sample_rate_;  // Return requested rate (what user will actually receive)
     props.num_channels = num_channels_;
 
     return props;

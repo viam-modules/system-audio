@@ -10,6 +10,7 @@
 #include <viam/sdk/components/audio_in.hpp>
 #include <viam/sdk/config/resource.hpp>
 #include <viam/sdk/resource/reconfigurable.hpp>
+#include "audio_codec.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "portaudio.h"
@@ -51,10 +52,21 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
+    void setup_stream_params(audio::codec::AudioCodec codec_enum,
+                             MP3EncoderContext& mp3_ctx,
+                             bool is_reconfigure,
+                             int& stream_sample_rate,
+                             int& requested_sample_rate,
+                             int& stream_num_channels,
+                             int& stream_historical_throttle_ms,
+                             int& samples_per_chunk,
+                             int& device_samples_per_chunk);
+
     // Member variables
     std::string device_name_;
     PaDeviceIndex device_index_;
-    int sample_rate_;
+    int sample_rate_;            // Device's native sample rate (what stream is opened at)
+    int requested_sample_rate_;  // User's requested sample rate (may differ from device rate)
     int num_channels_;
     double latency_;
     int historical_throttle_ms_;  // Throttle time for historical data stream

@@ -171,6 +171,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     int audio_sample_rate = info->sample_rate_hz;
     int audio_num_channels = info->num_channels;
 
+    // decode to pcm16
     switch (codec) {
         case AudioCodec::MP3: {
             MP3DecoderContext mp3_ctx;
@@ -196,6 +197,16 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             throw std::invalid_argument("Unsupported codec for playback");
     }
 
+    // Convert uint8_t bytes to int16_t samples
+    // PCM_16 means each sample is 2 bytes (16 bits)
+    if (decoded_data.size() % 2 != 0) {
+        VIAM_SDK_LOG(error) << "Audio data size must be even for PCM_16 format, got " << decoded_data.size() << " bytes";
+        throw std::invalid_argument("got invalid data size, cannot convert to int16");
+    }
+
+    const int16_t* decoded_samples = reinterpret_cast<const int16_t*>(decoded_data.data());
+    size_t num_samples = decoded_data.size() / sizeof(int16_t);
+
     int speaker_sample_rate;
 
     // Validate decoded audio properties match speaker configuration
@@ -210,31 +221,28 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         }
     }
 
+    // Resample if sample rates don't match
+    std::vector<int16_t> resampled_samples;
+    const int16_t* samples = decoded_samples;
+    size_t final_num_samples = num_samples;
+    int final_sample_rate = audio_sample_rate;
+
     if (audio_sample_rate != speaker_sample_rate) {
         VIAM_SDK_LOG(info) << "Sample rate mismatch: speaker is configured for " << speaker_sample_rate << "Hz but audio is "
                            << audio_sample_rate << "Hz, resampling audio";
 
-        std::vector<uint8_t> resampled_data;
-        resample_audio(audio_sample_rate, speaker_sample_rate, audio_num_channels, decoded_data, resampled_data);
+        resample_audio(audio_sample_rate, speaker_sample_rate, audio_num_channels, decoded_samples, num_samples, resampled_samples);
 
-        // Replace with resampled data
-        decoded_data = std::move(resampled_data);
+        // Use resampled data
+        samples = resampled_samples.data();
+        final_num_samples = resampled_samples.size();
+        final_sample_rate = speaker_sample_rate;
     }
-
-    // Convert uint8_t bytes to int16_t samples
-    // PCM_16 means each sample is 2 bytes (16 bits)
-    if (decoded_data.size() % 2 != 0) {
-        VIAM_SDK_LOG(error) << "Audio data size must be even for PCM_16 format, got " << decoded_data.size() << " bytes";
-        throw std::invalid_argument("Audio data size must be even for PCM16 format");
-    }
-
-    const int16_t* samples = reinterpret_cast<const int16_t*>(decoded_data.data());
-    const size_t num_samples = decoded_data.size() / sizeof(int16_t);
 
     // Check if audio duration exceeds playback buffer capacity
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
-        double duration_seconds = static_cast<double>(num_samples) / (audio_sample_rate * audio_num_channels);
+        double duration_seconds = static_cast<double>(final_num_samples) / (final_sample_rate * audio_num_channels);
         if (duration_seconds > audio::BUFFER_DURATION_SECONDS) {
             VIAM_SDK_LOG(error) << "Audio duration (" << duration_seconds << " seconds) exceeds maximum playback buffer size ("
                                 << audio::BUFFER_DURATION_SECONDS << " seconds)";
@@ -243,7 +251,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         }
     }
 
-    VIAM_SDK_LOG(debug) << "Playing " << num_samples << " samples (" << decoded_data.size() << " bytes)";
+    VIAM_SDK_LOG(debug) << "Playing " << final_num_samples << " samples (" << final_num_samples * sizeof(int16_t) << " bytes)";
 
     // Write samples to the audio buffer and capture context
     uint64_t start_position;
@@ -257,14 +265,14 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         playback_context = audio_context_;
         start_position = audio_context_->get_write_position();
 
-        for (size_t i = 0; i < num_samples; i++) {
+        for (size_t i = 0; i < final_num_samples; i++) {
             audio_context_->write_sample(samples[i]);
         }
     }
 
     // Block until playback position catches up
     VIAM_SDK_LOG(debug) << "Waiting for playback to complete...";
-    while (playback_context->playback_position.load() - start_position < num_samples) {
+    while (playback_context->playback_position.load() - start_position < final_num_samples) {
         // Check if context changed (reconfigure happened)
         {
             std::lock_guard<std::mutex> lock(stream_mu_);
