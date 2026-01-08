@@ -15,8 +15,6 @@ inline void resample_audio(int input_sample_rate,
                            const int16_t* input_samples,
                            size_t input_sample_count,
                            std::vector<int16_t>& output_samples) {
-    VIAM_SDK_LOG(debug) << "resample_audio called: input_rate=" << input_sample_rate << " output_rate=" << output_sample_rate
-                        << " channels=" << num_channels << " input_samples=" << input_sample_count;
 
     // soxr_oneshot expects "samples per channel" (frames), not total samples
     size_t input_frames = input_sample_count / num_channels;
@@ -25,11 +23,9 @@ inline void resample_audio(int input_sample_rate,
     // https://sourceforge.net/p/soxr/code/ci/master/tree/examples/1-single-block.c#l31
     size_t output_frames = static_cast<size_t>(std::lround(input_frames * output_sample_rate / input_sample_rate));
     size_t output_sample_count = output_frames * num_channels;
-    VIAM_SDK_LOG(debug) << "Calculated output frames: " << output_frames << " (total samples: " << output_sample_count << ")";
 
     // Resize output to have enough space for samples
     output_samples.resize(output_sample_count);
-    VIAM_SDK_LOG(debug) << "Output buffer resized to " << output_sample_count << " samples";
 
     // Specify I/O format as int16 (default is float32)
     soxr_io_spec_t io_spec = soxr_io_spec(SOXR_INT16_I, SOXR_INT16_I);
@@ -56,10 +52,7 @@ inline void resample_audio(int input_sample_rate,
     }
 
     size_t output_done_samples = output_done_frames * num_channels;
-    VIAM_SDK_LOG(debug) << "Resampling successful: input_frames=" << input_frames << " output_frames_done=" << output_done_frames
-                        << " (expected ~" << output_frames << ") total_output_samples=" << output_done_samples;
 
     // Resize output buffer to match actual samples written (frames * channels)
     output_samples.resize(output_done_samples);
-    VIAM_SDK_LOG(debug) << "Final output buffer size: " << output_done_samples << " samples";
 }
