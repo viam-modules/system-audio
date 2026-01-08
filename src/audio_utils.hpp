@@ -150,7 +150,13 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
     stream_params.device_name = deviceInfo->name;
 
     // Resolve final values (use params if specified, otherwise device defaults)
-    stream_params.sample_rate = params.sample_rate.value_or(static_cast<int>(deviceInfo->defaultSampleRate));
+    // For microphone (input): always use device default for stream
+    // For speaker (output): respect configured rate if provided, allows users to optimize playback
+    if (direction == StreamDirection::Input) {
+        stream_params.sample_rate = static_cast<int>(deviceInfo->defaultSampleRate);
+    } else {
+        stream_params.sample_rate = params.sample_rate.value_or(static_cast<int>(deviceInfo->defaultSampleRate));
+    }
     stream_params.num_channels = params.num_channels.value_or(1);
 
     VIAM_SDK_LOG(debug) << "[setupStreamFromConfig] Using sample rate " << stream_params.sample_rate

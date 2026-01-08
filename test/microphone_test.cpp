@@ -500,12 +500,13 @@ TEST_F(MicrophoneTest, ReconfigureDifferentDeviceName) {
     PaStream* dummy_stream = reinterpret_cast<PaStream*>(0x1234);
 
     // Reconfigure with different device name
-    auto new_config = createConfig(new_device_name, 44100, 2);
+    auto new_config = createConfig(new_device_name, 22000, 2);
 
     PaDeviceInfo new_device;
     new_device.name = new_device_name;
     new_device.maxInputChannels = 2;
     new_device.defaultLowInputLatency = 0.01;
+    new_device.defaultSampleRate = test_utils::DEFAULT_DEVICE_SAMPLE_RATE;
 
     EXPECT_CALL(*mock_pa_, stopStream(::testing::_)).WillOnce(::testing::Return(paNoError));
     EXPECT_CALL(*mock_pa_, closeStream(::testing::_)).WillOnce(::testing::Return(paNoError));
@@ -519,6 +520,7 @@ TEST_F(MicrophoneTest, ReconfigureDifferentDeviceName) {
 
     EXPECT_EQ(mic.device_name_, new_device_name);
     EXPECT_EQ(mic.sample_rate_, 44100);
+    EXPECT_EQ(mic.requested_sample_rate_, 22000);
     EXPECT_EQ(mic.num_channels_, 2);
 }
 
@@ -545,7 +547,7 @@ TEST_F(MicrophoneTest, ReconfigureDifferentSampleRate) {
     EXPECT_NO_THROW(mic.reconfigure(test_deps_, new_config));
 
     EXPECT_EQ(mic.device_name_, testDeviceName);
-    EXPECT_EQ(mic.sample_rate_, 2000);
+    EXPECT_EQ(mic.requested_sample_rate_, 2000);
     EXPECT_EQ(mic.num_channels_, 2);
 }
 
@@ -613,7 +615,8 @@ TEST_F(MicrophoneTest, ReconfigureChangesAudioContext) {
     ASSERT_NE(new_context, nullptr);
     EXPECT_NE(new_context, initial_context);
 
-    EXPECT_EQ(new_context->info.sample_rate_hz, 48000);
+    // audio context will have device info sample rate
+    EXPECT_EQ(new_context->info.sample_rate_hz, 44100);
     EXPECT_EQ(new_context->info.num_channels, 2);
     EXPECT_EQ(new_context->info.codec, viam::sdk::audio_codecs::PCM_16);
 

@@ -8,6 +8,9 @@
 
 namespace test_utils {
 
+// Common test constants
+constexpr int DEFAULT_DEVICE_SAMPLE_RATE = 44100;  // Device's native/default sample rate in tests
+
 // Shared test environment for audio tests
 // Manages the viam::sdk::Instance lifecycle for all tests
 class AudioTestEnvironment : public ::testing::Environment {
@@ -54,7 +57,7 @@ protected:
         // Setup mock device info with common defaults
         mock_device_info_.defaultLowInputLatency = 0.01;
         mock_device_info_.defaultLowOutputLatency = 0.01;
-        mock_device_info_.defaultSampleRate = 44100.0;
+        mock_device_info_.defaultSampleRate = DEFAULT_DEVICE_SAMPLE_RATE;
         mock_device_info_.maxInputChannels = 2;
         mock_device_info_.maxOutputChannels = 2;
         mock_device_info_.name = testDeviceName;
