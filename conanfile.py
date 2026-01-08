@@ -62,7 +62,6 @@ class audio(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-        # JACK libraries are bundled by CMake install() on Linux
 
     def deploy(self):
         with TemporaryDirectory(dir=self.deploy_folder) as tmp_dir:
@@ -78,7 +77,6 @@ class audio(ConanFile):
             lib_folder = os.path.join(self.package_folder, "lib")
             if os.path.exists(lib_folder):
                 self.output.info("Copying bundled JACK libraries from lib/")
-                # Only copy JACK libraries, not cmake files or test libraries
                 copy(self, "libjack*.so*", src=lib_folder, dst=os.path.join(tmp_dir, "lib"))
 
             self.output.info("Creating module.tar.gz")
