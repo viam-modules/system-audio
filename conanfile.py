@@ -73,6 +73,14 @@ class audio(ConanFile):
             self.output.info("Copying meta.json")
             copy(self, "meta.json", src=self.package_folder, dst=tmp_dir)
 
+            # Copy bundled libraries if they exist (for Linux runtime dependencies)
+            lib_folder = os.path.join(self.package_folder, "lib")
+            if os.path.exists(lib_folder):
+                self.output.info("Copying bundled libraries from lib/")
+                copy(self, "libjack*.so*", src=lib_folder, dst=os.path.join(tmp_dir, "lib"))
+                copy(self, "libdb*.so*", src=lib_folder, dst=os.path.join(tmp_dir, "lib"))
+
+
             self.output.info("Creating module.tar.gz")
             with tarfile.open(os.path.join(self.deploy_folder, "module.tar.gz"), "w|gz") as tar:
                 tar.add(tmp_dir, arcname=".", recursive=True)

@@ -19,7 +19,13 @@ if [[ ${OS} == "darwin" ]]; then
   brew install portaudio
 
 elif  [[ ${OS} == "linux" ]]; then
-    sudo apt -y update && sudo apt -y upgrade && sudo apt-get install -y libasound-dev portaudio19-dev python3-venv cmake
+    sudo apt -y update && sudo apt-get install -y \
+        libasound-dev \
+        portaudio19-dev \
+        python3-venv \
+        cmake \
+        libjack-dev \
+        libdb5.3-dev
 fi
 
 if [ ! -f "./venv/bin/activate" ]; then

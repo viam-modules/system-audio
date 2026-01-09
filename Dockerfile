@@ -46,6 +46,13 @@ RUN apt-get -y --no-install-recommends install \
     python3.10-venv \
     python3-pip
 
+# Install audio build dependencies
+RUN apt-get -y --no-install-recommends install \
+    libasound-dev \
+    portaudio19-dev \
+    libjack-dev \
+    libdb5.3-dev \
+    patchelf
 
 RUN python3 -m pip install conan
 RUN conan profile detect

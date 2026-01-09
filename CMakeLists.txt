@@ -83,8 +83,42 @@ target_include_directories(audio-module
 )
 target_compile_options(audio-module PRIVATE ${PORTAUDIO_CFLAGS_OTHER})
 
+# Set RPATH to look for libraries in the lib/ directory relative to the executable
+# This allows us to bundle shared libraries with the module
+set_target_properties(audio-module PROPERTIES
+    INSTALL_RPATH "$ORIGIN/lib"
+    BUILD_WITH_INSTALL_RPATH TRUE
+)
+
+# Use --disable-new-dtags to force RPATH (not RUNPATH) for transitive dependencies
+if(LINUX)
+    target_link_options(audio-module PRIVATE
+        "LINKER:--disable-new-dtags"
+    )
+endif()
+
 install(TARGETS audio-module DESTINATION .)
 install(FILES meta.json DESTINATION .)
+
+# Bundle JACK and its dependencies into binary
+if(LINUX)
+    file(GLOB JACK_LIBS
+        "/usr/lib/*/libjack.so*"
+        "/lib/*/libjack.so*"
+    )
+    if(JACK_LIBS)
+        install(FILES ${JACK_LIBS} DESTINATION lib)
+    endif()
+
+    # Bundle libdb-5.3 (required by JACK on Ubuntu 22.04/Debian 12)
+    file(GLOB LIBDB_LIBS
+        "/lib/*/libdb-5.3.so*"
+        "/usr/lib/*/libdb-5.3.so*"
+    )
+    if(LIBDB_LIBS)
+        install(FILES ${LIBDB_LIBS} DESTINATION lib)
+    endif()
+endif()
 
 enable_testing()
 add_subdirectory(test)
