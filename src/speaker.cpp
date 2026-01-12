@@ -228,7 +228,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     int final_sample_rate = audio_sample_rate;
 
     if (audio_sample_rate != speaker_sample_rate) {
-        VIAM_SDK_LOG(info) << "resampling audio from " << audio_sample_rate << "Hz to speaker native sample rate " << speaker_sample_rate << "Hz";
+        VIAM_SDK_LOG(info) << "resampling audio from " << audio_sample_rate << "Hz to speaker native sample rate " << speaker_sample_rate << " Hz";
         resample_audio(audio_sample_rate, speaker_sample_rate, audio_num_channels, decoded_samples, num_samples, resampled_samples);
 
         // Use resampled data
