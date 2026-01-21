@@ -32,11 +32,7 @@ static size_t skip_id3v2_tag(const uint8_t* data, size_t size) {
     // ID3v2 header
     if (data[0] == 'I' && data[1] == 'D' && data[2] == '3') {
         // Size is stored as a "syncsafe" integer (7 bits per byte)
-        size_t tag_size =
-            ((data[6] & 0x7F) << 21) |
-            ((data[7] & 0x7F) << 14) |
-            ((data[8] & 0x7F) << 7)  |
-            (data[9] & 0x7F);
+        size_t tag_size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F);
 
         // Total size = header (10 bytes) + tag payload
         return 10 + tag_size;
@@ -87,12 +83,10 @@ static void append_samples(std::vector<uint8_t>& output_data,
     output_data.insert(output_data.end(), bytes, bytes + interleaved.size() * sizeof(int16_t));
 }
 
-void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
-                         const std::vector<uint8_t>& encoded_data,
-                         std::vector<uint8_t>& decoded_data) {
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& encoded_data, std::vector<uint8_t>& decoded_data) {
     if (!ctx.decoder) {
-       VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: MP3 decoder not initialized";
-       throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder not initialized");
+        VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: MP3 decoder not initialized";
+        throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder not initialized");
     }
 
     if (encoded_data.empty()) {
@@ -124,8 +118,8 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
     unsigned char* encoded_data_ptr = buffer.data() + offset;
     const size_t mp3_data_length = buffer.size() - offset;
 
-    VIAM_SDK_LOG(debug) << "Decoding MP3 data, buffer size after sync scan: " << mp3_data_length
-                        << " (skipped " << offset << " bytes total)";
+    VIAM_SDK_LOG(debug) << "Decoding MP3 data, buffer size after sync scan: " << mp3_data_length << " (skipped " << offset
+                        << " bytes total)";
 
     // Buffers for decoded PCM samples - one MP3 frame is max 1152 samples
     const size_t frame_buffer_size = 1152;  // Samples per channel
@@ -139,12 +133,8 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
 
     // Feed ALL data to LAME once - it buffers internally
     // First call may return 0 while syncing, that's OK
-    int decoded_samples = hip_decode1_headers(ctx.decoder.get(),
-                                              encoded_data_ptr,
-                                              mp3_data_length,
-                                              pcm_left.data(),
-                                              pcm_right.data(),
-                                              &mp3data);
+    int decoded_samples =
+        hip_decode1_headers(ctx.decoder.get(), encoded_data_ptr, mp3_data_length, pcm_left.data(), pcm_right.data(), &mp3data);
 
     if (decoded_samples < 0) {
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Error decoding MP3 data";
@@ -168,12 +158,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
     // Keep going even if some calls return 0 - LAME may need multiple calls to sync
     int consecutive_zeros = 0;
     while (consecutive_zeros < 10) {  // Allow some zeros for sync, but not infinite
-        decoded_samples = hip_decode1_headers(ctx.decoder.get(),
-                                              nullptr,
-                                              0,
-                                              pcm_left.data(),
-                                              pcm_right.data(),
-                                              &mp3data);
+        decoded_samples = hip_decode1_headers(ctx.decoder.get(), nullptr, 0, pcm_left.data(), pcm_right.data(), &mp3data);
 
         if (decoded_samples < 0) {
             VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Error during decode";
@@ -203,7 +188,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
         }
     }
 
-     // Ensure we extracted valid audio properties
+    // Ensure we extracted valid audio properties
     if (ctx.sample_rate == 0 || ctx.num_channels == 0) {
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Failed to extract MP3 audio properties (sample_rate=" << ctx.sample_rate
                             << ", num_channels=" << ctx.num_channels << ")";
@@ -214,7 +199,6 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: No audio data decoded";
         throw std::runtime_error("[decode_mp3_to_pcm16]: decoded 0 frames");
     }
-
 
     VIAM_SDK_LOG(debug) << "[decode_mp3_to_pcm16]: Total decoded: " << (decoded_data.size() / sizeof(int16_t) / ctx.num_channels)
                         << " frames (" << decoded_data.size() << " bytes)";
