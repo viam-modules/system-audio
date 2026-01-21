@@ -91,12 +91,12 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
                          const std::vector<uint8_t>& encoded_data,
                          std::vector<uint8_t>& decoded_data) {
     if (!ctx.decoder) {
-        VIAM_SDK_LOG(error) << "MP3 decoder not initialized";
-        throw std::runtime_error("MP3 decoder not initialized");
+       VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: MP3 decoder not initialized";
+       throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder not initialized");
     }
 
     if (encoded_data.empty()) {
-        VIAM_SDK_LOG(debug) << "No data to decode";
+        VIAM_SDK_LOG(debug) << "decode_mp3_to_pcm16: no data to decode";
         return;
     }
 
@@ -117,8 +117,8 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
     }
 
     if (offset >= buffer.size()) {
-        VIAM_SDK_LOG(error) << "No MP3 frame sync found";
-        throw std::runtime_error("MP3 decoder: no valid frame found");
+        VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: No MP3 frame sync found";
+        throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder: no valid frame found");
     }
 
     unsigned char* encoded_data_ptr = buffer.data() + offset;
@@ -127,6 +127,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
     VIAM_SDK_LOG(debug) << "Decoding MP3 data, buffer size after sync scan: " << mp3_data_length
                         << " (skipped " << offset << " bytes total)";
 
+    // Buffers for decoded PCM samples - one MP3 frame is max 1152 samples
     const size_t frame_buffer_size = 1152;  // Samples per channel
     std::vector<int16_t> pcm_left(frame_buffer_size);
     std::vector<int16_t> pcm_right(frame_buffer_size);
@@ -184,6 +185,9 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
             continue;
         }
 
+        if (consecutive_zeros > 0) {
+            VIAM_SDK_LOG(debug) << "LAME synced after " << consecutive_zeros << " zero returns";
+        }
         consecutive_zeros = 0;  // Reset on successful decode
 
         // Get audio properties if not yet set
@@ -199,15 +203,21 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx,
         }
     }
 
+     // Ensure we extracted valid audio properties
+    if (ctx.sample_rate == 0 || ctx.num_channels == 0) {
+        VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Failed to extract MP3 audio properties (sample_rate=" << ctx.sample_rate
+                            << ", num_channels=" << ctx.num_channels << ")";
+        throw std::runtime_error("[decode_mp3_to_pcm16]: Failed to extract MP3 audio properties");
+    }
+
     if (frames_decoded == 0) {
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: No audio data decoded";
         throw std::runtime_error("[decode_mp3_to_pcm16]: decoded 0 frames");
     }
 
-    VIAM_SDK_LOG(debug) << "[decode_mp3_to_pcm16]: Decoded " << frames_decoded
-                        << " frames, total samples: "
-                        << decoded_data.size() / sizeof(int16_t) / ctx.num_channels;
-}
 
+    VIAM_SDK_LOG(debug) << "[decode_mp3_to_pcm16]: Total decoded: " << (decoded_data.size() / sizeof(int16_t) / ctx.num_channels)
+                        << " frames (" << decoded_data.size() << " bytes)";
+}
 
 }  // namespace speaker
