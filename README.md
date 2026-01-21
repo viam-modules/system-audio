@@ -118,6 +118,7 @@ All audio data uses **little-endian** byte order. The specific format depends on
 - **Microphone (`get_audio`)**: Returns audio data in interleaved format
 - **Speaker (`play`)**: Expects audio data in interleaved format
 
+
 ## Setup
 ```bash
 canon make setup

@@ -688,7 +688,7 @@ TEST_F(MicrophoneTest, GetAudioReceivesChunks) {
     const int samples_per_chunk = 4410;
     const int num_chunks = 5;
 
-    mic.audio_context_ = createTestContext(mic, 0);
+     mic.audio_context_ = createTestContext(mic, 0);
 
     int chunks_received = 0;
     auto handler = [&](viam::sdk::AudioIn::audio_chunk&& chunk) {
@@ -765,6 +765,7 @@ TEST_F(MicrophoneTest, GetAudioWithInvalidCodecThrowsError) {
         mic.get_audio("invalid_codec", handler, 0.1, 0, ProtoStruct{});
     }, std::invalid_argument);
 }
+
 
 // InputStreamContext validation tests
 TEST_F(MicrophoneTest, InputStreamCOntextThrowsOnZeroNumChannels) {
