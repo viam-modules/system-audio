@@ -24,7 +24,8 @@ MP3DecoderContext::~MP3DecoderContext() {
 }
 
 // helper to skip id3 tag: https://id3.org/id3v2.3.0
-static size_t skip_id3v2_tag(const uint8_t* data, size_t size) {
+static size_t get_id3v2_offset(const uint8_t* data, size_t size) {
+    // For safety; id3 header is 10 bytes
     if (size < 10) {
         return 0;
     }
@@ -97,7 +98,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
     std::vector<uint8_t> buffer(encoded_data.begin(), encoded_data.end());
 
     // Skip ID3v2 tag if present
-    size_t offset = skip_id3v2_tag(buffer.data(), buffer.size());
+    size_t offset = get_id3v2_offset(buffer.data(), buffer.size());
     if (offset > 0) {
         VIAM_SDK_LOG(debug) << "Skipped ID3v2 tag of size " << offset << " bytes";
     }
@@ -132,7 +133,7 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
     int frames_decoded = 0;
 
     // Feed ALL data to LAME once - it buffers internally
-    // First call may return 0 while syncing, that's OK
+    // First call may return 0
     int decoded_samples =
         hip_decode1_headers(ctx.decoder.get(), encoded_data_ptr, mp3_data_length, pcm_left.data(), pcm_right.data(), &mp3data);
 
@@ -154,10 +155,10 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
         frames_decoded++;
     }
 
-    // Now extract ALL remaining frames by calling with NULL
-    // Keep going even if some calls return 0 - LAME may need multiple calls to sync
+    // extract all remaining frames by calling with null
+    // Keep going even if some calls return 0 - LAME may need multiple calls to sync and flush
     int consecutive_zeros = 0;
-    while (consecutive_zeros < 10) {  // Allow some zeros for sync, but not infinite
+    while (consecutive_zeros < 3) {
         decoded_samples = hip_decode1_headers(ctx.decoder.get(), nullptr, 0, pcm_left.data(), pcm_right.data(), &mp3data);
 
         if (decoded_samples < 0) {
