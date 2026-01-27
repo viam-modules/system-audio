@@ -90,6 +90,73 @@ TEST_F(SpeakerTest, ValidateWithLatencyNotDouble) {
     std::invalid_argument);
 }
 
+TEST_F(SpeakerTest, ValidateWithValidVolume) {
+  auto attributes = ProtoStruct{};
+  attributes["volume"] = 50;
+
+  ResourceConfig valid_config(
+      "rdk:component:speaker", "", test_name_, attributes, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_NO_THROW({
+    auto result = speaker::Speaker::validate(valid_config);
+    EXPECT_TRUE(result.empty());
+  });
+}
+
+TEST_F(SpeakerTest, ValidateWithVolumeBoundaries) {
+  auto attrs_zero = ProtoStruct{};
+  attrs_zero["volume"] = 0;
+
+  ResourceConfig config_zero(
+      "rdk:component:speaker", "", test_name_, attrs_zero, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_NO_THROW(speaker::Speaker::validate(config_zero));
+
+  auto attrs_max = ProtoStruct{};
+  attrs_max["volume"] = 100.0;
+
+  ResourceConfig config_max(
+      "rdk:component:speaker", "", test_name_, attrs_max, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_NO_THROW(speaker::Speaker::validate(config_max));
+}
+
+TEST_F(SpeakerTest, ValidateWithVolumeNotNumber) {
+  auto attributes = ProtoStruct{};
+  attributes["volume"] = "loud";
+
+  ResourceConfig invalid_config(
+      "rdk:component:speaker", "", test_name_, attributes, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_THROW(speaker::Speaker::validate(invalid_config), std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, ValidateWithVolumeTooHigh) {
+  auto attributes = ProtoStruct{};
+  attributes["volume"] = 101;
+
+  ResourceConfig invalid_config(
+      "rdk:component:speaker", "", test_name_, attributes, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_THROW(speaker::Speaker::validate(invalid_config), std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, ValidateWithVolumeTooLow) {
+  auto attributes = ProtoStruct{};
+  attributes["volume"] = -1;
+
+  ResourceConfig invalid_config(
+      "rdk:component:speaker", "", test_name_, attributes, "",
+      speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+  EXPECT_THROW(speaker::Speaker::validate(invalid_config), std::invalid_argument);
+}
+
 
 TEST_F(SpeakerTest, GetPropertiesReturnsCorrectValues) {
     int sample_rate = 48000;

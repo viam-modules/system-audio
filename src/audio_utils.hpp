@@ -34,6 +34,7 @@ struct ConfigParams {
     std::optional<int> num_channels;
     std::optional<double> latency_ms;
     std::optional<int> historical_throttle_ms;
+    std::optional<int> volume;
 };
 
 // Configuration for opening a PortAudio stream
@@ -91,6 +92,10 @@ inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) 
 
     if (attrs.count("historical_throttle_ms")) {
         params.historical_throttle_ms = *attrs.at("historical_throttle_ms").get<double>();
+    }
+
+    if (attrs.count("volume")) {
+        params.volume = static_cast<int>(*attrs.at("volume").get<double>());
     }
 
     VIAM_SDK_LOG(debug) << "[parseConfigAttributes] sucessfully parsed config attributes";

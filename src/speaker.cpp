@@ -9,6 +9,7 @@
 #include "audio_codec.hpp"
 #include "audio_utils.hpp"
 #include "mp3_decoder.hpp"
+#include "volume.hpp"
 #include "resample.hpp"
 
 namespace speaker {
@@ -29,6 +30,10 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, au
         latency_ = setup.stream_params.latency_seconds;
         audio_context_ = setup.audio_context;
         audio::utils::restart_stream(stream_, setup.stream_params, pa_);
+        volume_ = setup.config_params.volume;
+        if(volume_) {
+            audio::volume::set_volume(device_name_, *volume_);
+        }
     }
 }
 
@@ -130,6 +135,17 @@ std::vector<std::string> Speaker::validate(vsdk::ResourceConfig cfg) {
         if (num_channels <= 0) {
             VIAM_SDK_LOG(error) << "[validate] num_channels must be greater than zero";
             throw std::invalid_argument(" num_channels must be greater than zero");
+        }
+    }
+    if (attrs.count("volume")) {
+        if (!attrs["volume"].is_a<double>()) {
+            VIAM_SDK_LOG(error) << "[validate] volume attribute must be a number";
+            throw std::invalid_argument("volume attribute must be a number");
+        }
+        double vol = *attrs.at("volume").get<double>();
+        if (vol < 0 || vol > 100) {
+            VIAM_SDK_LOG(error) << "[validate] volume must be between 0 and 100";
+            throw std::invalid_argument("volume must be between 0 and 100");
         }
     }
 
@@ -338,6 +354,10 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             num_channels_ = setup.stream_params.num_channels;
             latency_ = setup.stream_params.latency_seconds;
             audio_context_ = setup.audio_context;
+            volume_ = setup.config_params.volume;
+            if(volume_) {
+                audio::volume::set_volume(device_name_, *volume_);
+            }
         }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
     } catch (const std::exception& e) {
