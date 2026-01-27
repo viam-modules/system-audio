@@ -61,6 +61,7 @@ class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurab
     double latency_;
     int sample_rate_;
     int num_channels_;
+    std::optional<int> volume_;
     static vsdk::Model model;
 
     // This is used to ensure there is only one play() call at a time.
