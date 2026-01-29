@@ -65,8 +65,8 @@ inline void set_volume(const std::string& device_name, int volume) {
     snd_mixer_selem_id_t* sid = nullptr;
     snd_mixer_selem_id_alloca(&sid);
 
-    // Volume control elements will either be called PCM or Master depending on the device
-    const char* element_names[] = {"PCM", "Master"};
+    // Volume control elements will either be called PCM, Master or Speaker depending on the device
+    const char* element_names[] = {"PCM", "Master", "Speaker"};
     snd_mixer_elem_t* elem = nullptr;
 
     for (const char* name : element_names) {
