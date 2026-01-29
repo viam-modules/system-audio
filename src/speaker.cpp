@@ -16,6 +16,9 @@ namespace speaker {
 namespace vsdk = ::viam::sdk;
 using audio::codec::AudioCodec;
 
+constexpr int MIN_VOLUME = 0;
+constexpr int MAX_VOLUME = 100;
+
 Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioOut(cfg.name()), pa_(pa), stream_(nullptr) {
     auto setup = audio::utils::setup_audio_device<audio::OutputStreamContext>(
@@ -143,7 +146,7 @@ std::vector<std::string> Speaker::validate(vsdk::ResourceConfig cfg) {
             throw std::invalid_argument("volume attribute must be a number");
         }
         double vol = *attrs.at("volume").get<double>();
-        if (vol < 0 || vol > 100) {
+        if (vol < MIN_VOLUME || vol > MAX_VOLUME) {
             VIAM_SDK_LOG(error) << "[validate] volume must be between 0 and 100";
             throw std::invalid_argument("volume must be between 0 and 100");
         }
@@ -158,7 +161,7 @@ viam::sdk::ProtoStruct Speaker::do_command(const viam::sdk::ProtoStruct& command
             throw std::invalid_argument("set_volume must be a number");
         }
         int vol = static_cast<int>(*command.at("set_volume").get<double>());
-        if (vol < 0 || vol > 100) {
+        if (vol < MIN_VOLUME || vol > MAX_VOLUME) {
             throw std::invalid_argument("volume must be between 0 and 100");
         }
 
