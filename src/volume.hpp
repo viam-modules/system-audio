@@ -27,6 +27,7 @@ inline std::string extract_alsa_card(const std::string& device_name) {
             }
         }
     }
+    VIAM_SDK_LOG(warn) << "[set_volume] Couldn't find device card, falling back to default";
     return "default";
 }
 
@@ -54,10 +55,9 @@ inline void set_volume(const std::string& device_name, int volume) {
         return;
     }
 
-    // load elements (ontrols of the mixer)
+    // load elements (controls of the mixer)
     if (int err = snd_mixer_load(mixer.get()); err < 0) {
         VIAM_SDK_LOG(error) << "[set_volume] Failed to load mixer elements: " << snd_strerror(err);
-        ;
         return;
     }
 
@@ -89,9 +89,8 @@ inline void set_volume(const std::string& device_name, int volume) {
     snd_mixer_selem_get_playback_volume_range(elem, &min, &max);
 
     const long target = min + (max - min) * volume / 100;
-    if (int err = snd_mixer_selem_set_playback_volume_all(elem, target) < 0; err < 0) {
+    if (int err = snd_mixer_selem_set_playback_volume_all(elem, target); err < 0) {
         VIAM_SDK_LOG(error) << "[set_volume] Failed to set playback volume: " << snd_strerror(err);
-        ;
     }
 }
 
