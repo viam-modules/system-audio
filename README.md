@@ -94,6 +94,7 @@ The following attributes are available for the `viam:audio:speaker` model:
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the output stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels of the output stream. Must not exceed the device's maximum output channels. Default: 1 |
 | `latency` | int | **Optional** | Suggested output latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide faster audio output but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
+| `volume` | int | **Optional** | Output volume as percentage (0-100). Supported on Linux devices only. On macOS, use the system volume controls (keyboard keys). |
 
 ## Model viam:audio:discovery
 

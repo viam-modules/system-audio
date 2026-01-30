@@ -10,10 +10,14 @@
 #include "audio_utils.hpp"
 #include "mp3_decoder.hpp"
 #include "resample.hpp"
+#include "volume.hpp"
 
 namespace speaker {
 namespace vsdk = ::viam::sdk;
 using audio::codec::AudioCodec;
+
+constexpr int MIN_VOLUME = 0;
+constexpr int MAX_VOLUME = 100;
 
 Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioOut(cfg.name()), pa_(pa), stream_(nullptr) {
@@ -29,6 +33,10 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, au
         latency_ = setup.stream_params.latency_seconds;
         audio_context_ = setup.audio_context;
         audio::utils::restart_stream(stream_, setup.stream_params, pa_);
+        volume_ = setup.config_params.volume;
+        if (volume_) {
+            audio::volume::set_volume(device_name_, *volume_);
+        }
     }
 }
 
@@ -132,12 +140,39 @@ std::vector<std::string> Speaker::validate(vsdk::ResourceConfig cfg) {
             throw std::invalid_argument(" num_channels must be greater than zero");
         }
     }
+    if (attrs.count("volume")) {
+        if (!attrs["volume"].is_a<double>()) {
+            VIAM_SDK_LOG(error) << "[validate] volume attribute must be a number";
+            throw std::invalid_argument("volume attribute must be a number");
+        }
+        double vol = *attrs.at("volume").get<double>();
+        if (vol < MIN_VOLUME || vol > MAX_VOLUME) {
+            VIAM_SDK_LOG(error) << "[validate] volume must be between 0 and 100";
+            throw std::invalid_argument("volume must be between 0 and 100");
+        }
+    }
 
     return {};
 }
 
 viam::sdk::ProtoStruct Speaker::do_command(const viam::sdk::ProtoStruct& command) {
-    throw std::runtime_error("do_command is unimplemented");
+    if (command.count("set_volume")) {
+        if (!command.at("set_volume").is_a<double>()) {
+            throw std::invalid_argument("set_volume must be a number");
+        }
+        int vol = static_cast<int>(*command.at("set_volume").get<double>());
+        if (vol < MIN_VOLUME || vol > MAX_VOLUME) {
+            throw std::invalid_argument("volume must be between 0 and 100");
+        }
+
+        std::lock_guard<std::mutex> lock(stream_mu_);
+        audio::volume::set_volume(device_name_, vol);
+        volume_ = vol;
+
+        return viam::sdk::ProtoStruct{{"volume", static_cast<double>(vol)}};
+    }
+
+    throw std::invalid_argument("unknown command");
 }
 
 /**
@@ -283,6 +318,9 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    // Wait for audio pipeline to drain
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(latency_ * 1000)));
+
     VIAM_SDK_LOG(debug) << "Audio playback complete";
 }
 
@@ -338,6 +376,10 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             num_channels_ = setup.stream_params.num_channels;
             latency_ = setup.stream_params.latency_seconds;
             audio_context_ = setup.audio_context;
+            volume_ = setup.config_params.volume;
+            if (volume_) {
+                audio::volume::set_volume(device_name_, *volume_);
+            }
         }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
     } catch (const std::exception& e) {
