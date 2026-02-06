@@ -61,16 +61,6 @@ The microphone component supports reconfiguration - you can change stream attrib
 - Detect when `sample_rate` or `num_channels` changes
 - Handle the transition appropriately
 
-### macOS Microphone Permissions
-
-**Important:** On macOS, do not run viam-server with `sudo` when using the microphone component. Running with `sudo` will result in silent audio (all zeros) due to macOS privacy restrictions that prevent root processes from accessing the microphone.
-
-If you encounter permission issues:
-1. Run viam-server without `sudo`
-2. Grant microphone access to your Terminal application in **System Settings → Privacy & Security → Microphone**
-3. Restart your terminal and try again
-
-
 ## Model viam:audio:speaker
 ### Configuration
 The following attribute template can be used to configure this model:
