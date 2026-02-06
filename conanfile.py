@@ -25,7 +25,7 @@ class audio(ConanFile):
         "shared": True
     }
 
-    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*", "meta.json"
+    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*", "meta.json", "run.sh"
 
     def set_version(self):
         content = load(self, "CMakeLists.txt")
@@ -72,6 +72,9 @@ class audio(ConanFile):
 
             self.output.info("Copying meta.json")
             copy(self, "meta.json", src=self.package_folder, dst=tmp_dir)
+
+            self.output.info("Copying run.sh")
+            copy(self, "run.sh", src=self.package_folder, dst=tmp_dir)
 
             # Copy bundled libraries if they exist (for Linux runtime dependencies)
             lib_folder = os.path.join(self.package_folder, "lib")
