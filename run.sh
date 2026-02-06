@@ -8,9 +8,6 @@ echo "run.sh: running as $(whoami) (uid=$(id -u))" >&2
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_BIN="$SCRIPT_DIR/audio-module"
 
-echo "run.sh: MODULE_BIN=$MODULE_BIN" >&2
-ls -la "$MODULE_BIN" >&2
-
 if [ "$(uname)" = "Darwin" ] && [ "$(id -u)" -eq 0 ]; then
     CONSOLE_USER=$(stat -f '%Su' /dev/console)
 
@@ -20,6 +17,8 @@ if [ "$(uname)" = "Darwin" ] && [ "$(id -u)" -eq 0 ]; then
         chown "$CONSOLE_USER" "$SCRIPT_DIR/.."
 
         exec su "$CONSOLE_USER" -c "\"$MODULE_BIN\" $*"
+    else
+        echo "run.sh: WARNING: Running as root on macOS. Microphone component will not work due to TCC restrictions." >&2
     fi
 fi
 
