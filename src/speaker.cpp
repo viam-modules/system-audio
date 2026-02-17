@@ -178,8 +178,7 @@ viam::sdk::ProtoStruct Speaker::do_command(const viam::sdk::ProtoStruct& command
         // Advance playback position to write position so no more audio is played.
         std::lock_guard<std::mutex> lock(stream_mu_);
         if (audio_context_) {
-            audio_context_->playback_position.store(
-                audio_context_->get_write_position(), std::memory_order_relaxed);
+            audio_context_->playback_position.store(audio_context_->get_write_position(), std::memory_order_relaxed);
         }
         return viam::sdk::ProtoStruct{{"stopped", true}};
     }
