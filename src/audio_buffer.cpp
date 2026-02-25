@@ -49,20 +49,16 @@ AudioBuffer::AudioBuffer(const vsdk::audio_info& audio_info, int buffer_duration
 
 void AudioBuffer::write_sample(int16_t sample) noexcept {
     // Find current index of circular buffer
-    uint64_t pos = total_samples_written.load(std::memory_order_relaxed);
+    uint64_t pos = total_samples_written.load();
     int index = pos % buffer_capacity;
 
-    audio_buffer[index].store(sample, std::memory_order_relaxed);
+    audio_buffer[index].store(sample);
 
-    // The memory_order_release ensures that reader threads that see this
-    // counter value via acquire will also see the sample write above
-    total_samples_written.fetch_add(1, std::memory_order_release);
+    total_samples_written.fetch_add(1);
 }
 
 int AudioBuffer::read_samples(int16_t* buffer, int sample_count, uint64_t& read_position) noexcept {
-    // memory_order_acquire synronizes with the release in write_sample,
-    // ensuring all samples written up to the current_write_pos are visible
-    uint64_t current_write_pos = total_samples_written.load(std::memory_order_acquire);
+    uint64_t current_write_pos = total_samples_written.load();
 
     // trying to read position that hasn't been written yet - return zero samples
     if (read_position > current_write_pos) {
@@ -86,7 +82,7 @@ int AudioBuffer::read_samples(int16_t* buffer, int sample_count, uint64_t& read_
 
     for (int i = 0; i < to_read; i++) {
         int index = (read_position + i) % buffer_capacity;
-        buffer[i] = audio_buffer[index].load(std::memory_order_relaxed);
+        buffer[i] = audio_buffer[index].load();
     }
 
     // update to the new position in the stream
@@ -97,6 +93,6 @@ int AudioBuffer::read_samples(int16_t* buffer, int sample_count, uint64_t& read_
 }
 
 uint64_t AudioBuffer::get_write_position() const noexcept {
-    return total_samples_written.load(std::memory_order_acquire);
+    return total_samples_written.load();
 }
 }  // namespace audio

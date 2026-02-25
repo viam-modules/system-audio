@@ -82,13 +82,13 @@ int speakerCallback(const void* inputBuffer,
     const uint64_t total_samples = framesPerBuffer * ctx->info.num_channels;
 
     // Load current playback position from the context
-    uint64_t read_pos = ctx->playback_position.load(std::memory_order_relaxed);
+    uint64_t read_pos = ctx->playback_position.load();
 
     // Read samples from our circular buffer and put into portaudio output buffer
     const int samples_read = ctx->read_samples(output, total_samples, read_pos);
 
     // Store updated playback position
-    ctx->playback_position.store(read_pos, std::memory_order_relaxed);
+    ctx->playback_position.store(read_pos);
 
     // If we didn't get enough samples, fill the rest with silence
     for (int i = samples_read; i < total_samples; i++) {
@@ -178,7 +178,7 @@ viam::sdk::ProtoStruct Speaker::do_command(const viam::sdk::ProtoStruct& command
         // Advance playback position to write position so no more audio is played.
         std::lock_guard<std::mutex> lock(stream_mu_);
         if (audio_context_) {
-            audio_context_->playback_position.store(audio_context_->get_write_position(), std::memory_order_relaxed);
+            audio_context_->playback_position.store(audio_context_->get_write_position());
         }
         return viam::sdk::ProtoStruct{{"stopped", true}};
     }

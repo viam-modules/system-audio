@@ -103,9 +103,9 @@ protected:
 
 // Helper function to clear an AudioBuffer - resets all samples and write position
 inline void ClearAudioBuffer(audio::AudioBuffer& buffer) {
-    buffer.total_samples_written.store(0, std::memory_order_relaxed);
+    buffer.total_samples_written.store(0);
     for (int i = 0; i < buffer.buffer_capacity; i++) {
-        buffer.audio_buffer[i].store(0, std::memory_order_relaxed);
+        buffer.audio_buffer[i].store(0);
     }
 }
 
