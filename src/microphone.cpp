@@ -157,11 +157,11 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
         requested_sample_rate_ =
             setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
         num_channels_ = setup.stream_params.num_channels;
-        latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
         audio_context_ = setup.audio_context;
         historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
 
         audio::utils::restart_stream(stream_, setup.stream_params, pa_);
+        latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
     }
 }
 
