@@ -290,7 +290,8 @@ inline double get_stream_latency(PaStream* stream, const StreamParams& params, c
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
     const PaStreamInfo* stream_info = audio_interface.getStreamInfo(stream);
-    if (!stream_info) return params.suggested_latency_seconds;
+    if (!stream_info)
+        return params.suggested_latency_seconds;
     return params.is_input ? stream_info->inputLatency : stream_info->outputLatency;
 }
 
