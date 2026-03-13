@@ -12,12 +12,14 @@ if [ "$(uname)" = "Darwin" ] && [ "$(id -u)" -eq 0 ]; then
     CONSOLE_USER=$(stat -f '%Su' /dev/console)
 
     if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
-        # Transfer ownership to console user so they can access binary
-        chown -R "$CONSOLE_USER" "$SCRIPT_DIR"
-        chown "$CONSOLE_USER" "$SCRIPT_DIR/.."
+        # Copy binary to /tmp so the console user can traverse the path.
+        # The module may be installed under /var/root/ (drwx------), which
+        # the console user cannot traverse even if they own the binary.
+        TMPBIN=$(mktemp /tmp/audio-module-XXXXXX)
+        cp "$MODULE_BIN" "$TMPBIN"
+        chmod 755 "$TMPBIN"
 
-        exec sudo -u "$CONSOLE_USER" "$MODULE_BIN" "$@"
-        echo "run.sh: running as $CONSOLE_USER"
+        exec sudo -u "$CONSOLE_USER" "$TMPBIN" "$@"
     else
         echo "run.sh: WARNING: Running as root on macOS. Microphone component will not work due to TCC restrictions." >&2
     fi
