@@ -15,7 +15,10 @@ if [ "$(uname)" = "Darwin" ] && [ "$(id -u)" -eq 0 ]; then
         # Copy binary to /tmp so the console user can traverse the path.
         # The module may be installed under /var/root/ (drwx------), which
         # the console user cannot traverse even if they own the binary.
-        TMPBIN=$(mktemp /tmp/audio-module-XXXXXX)
+        # Use VIAM_MACHINE_PART_ID for a stable path across restarts (avoids
+        # accumulation in restart loops) that is still unique per robot instance.
+        # If VIAM_MACHINE_PART_ID is not set, the TMPBIN will be /tmp/viam-audio-module-default
+        TMPBIN="/tmp/viam-audio-module-${VIAM_MACHINE_PART_ID:-default}"
         cp "$MODULE_BIN" "$TMPBIN"
         chmod 755 "$TMPBIN"
 
