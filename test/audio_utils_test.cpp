@@ -160,9 +160,47 @@ TEST_F(AudioUtilsTest, SetupStreamFromConfigUsesProvidedValues) {
         mock_pa_.get()
     );
 
-    EXPECT_EQ(stream_params.sample_rate, 44100);
+    EXPECT_EQ(stream_params.sample_rate, 48000);  // natively supported by mock, so used directly
     EXPECT_EQ(stream_params.num_channels, 2);
     EXPECT_DOUBLE_EQ(stream_params.latency_seconds, 0.1);
+}
+
+TEST_F(AudioUtilsTest, SetupStreamFromConfigInputUsesSampleRateWhenNativelySupported) {
+    using ::testing::Return;
+    ON_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(Return(paNoError));
+
+    audio::utils::ConfigParams params;
+    params.device_name = "";
+    params.sample_rate = 48000;
+
+    auto stream_params = audio::utils::setupStreamFromConfig(
+        params,
+        audio::utils::StreamDirection::Input,
+        nullptr,
+        mock_pa_.get()
+    );
+
+    EXPECT_EQ(stream_params.sample_rate, 48000);
+}
+
+TEST_F(AudioUtilsTest, SetupStreamFromConfigInputFallsBackToDeviceDefaultWhenSampleRateNotSupported) {
+    using ::testing::Return;
+    ON_CALL(*mock_pa_, isFormatSupported(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(Return(paInvalidSampleRate));
+
+    audio::utils::ConfigParams params;
+    params.device_name = "";
+    params.sample_rate = 48000;
+
+    auto stream_params = audio::utils::setupStreamFromConfig(
+        params,
+        audio::utils::StreamDirection::Input,
+        nullptr,
+        mock_pa_.get()
+    );
+
+    EXPECT_EQ(stream_params.sample_rate, test_utils::DEFAULT_DEVICE_SAMPLE_RATE);
 }
 
 TEST_F(AudioUtilsTest, SetupStreamFromConfigOutputDirection) {
