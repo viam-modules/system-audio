@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # macOS: root can't access microphone due to TCC restrictions
 # Switch to the console user (whoever is logged in)
 # Linux: running as root is fine
