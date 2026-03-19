@@ -19,9 +19,11 @@ if [ "$(uname)" = "Darwin" ] && [ "$(id -u)" -eq 0 ]; then
         # accumulation in restart loops) that is still unique per robot instance.
         # If VIAM_MACHINE_PART_ID is not set, the TMPBIN will be /tmp/viam-audio-module-default
         TMPBIN="/tmp/viam-audio-module-${VIAM_MACHINE_PART_ID:-default}"
+        echo "run.sh: Copying module to $TMPBIN" >&1
         cp "$MODULE_BIN" "$TMPBIN"
         chmod 755 "$TMPBIN"
 
+        echo "run.sh: Executing viam-audio-module located at $TMPBIN as $CONSOLE_USER" >&1
         exec sudo -u "$CONSOLE_USER" "$TMPBIN" "$@"
     else
         echo "run.sh: WARNING: Running as root on macOS. Microphone component will not work due to TCC restrictions." >&2
