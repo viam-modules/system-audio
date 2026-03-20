@@ -179,8 +179,7 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
         } else {
             const int default_rate = static_cast<int>(deviceInfo->defaultSampleRate);
             VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Requested sample rate " << params.sample_rate.value()
-                               << " Hz is not natively supported, falling back to device default "
-                               << default_rate << " Hz";
+                               << " Hz is not natively supported, falling back to device default " << default_rate << " Hz";
             stream_params.sample_rate = default_rate;
         }
     } else {
