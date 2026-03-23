@@ -317,9 +317,9 @@ TEST_F(MicrophoneTest, SetsCorrectFields) {
     microphone::Microphone mic(deps, config, mock_pa_.get());
 
     // Verify behavior: member variables are set from config
-    EXPECT_EQ(mic.sample_rate_, sample_rate);
-    EXPECT_EQ(mic.num_channels_, num_channels);
-    EXPECT_EQ(mic.device_name_, testDeviceName);
+    EXPECT_EQ(mic.stream_params_.sample_rate, sample_rate);
+    EXPECT_EQ(mic.stream_params_.num_channels, num_channels);
+    EXPECT_EQ(mic.stream_params_.device_name, testDeviceName);
     EXPECT_DOUBLE_EQ(mic.latency_, test_latency_ms / 1000.0);  // Stored in seconds
 }
 
@@ -433,8 +433,8 @@ TEST_F(MicrophoneTest, UsesDeviceDefaultSampleRate) {
 
     microphone::Microphone mic(deps, config, mock_pa_.get());
 
-    EXPECT_EQ(mic.sample_rate_, 48000);
-    EXPECT_EQ(mic.num_channels_, 2);
+    EXPECT_EQ(mic.stream_params_.sample_rate, 48000);
+    EXPECT_EQ(mic.stream_params_.num_channels, 2);
 }
 
 TEST_F(MicrophoneTest, DeviceNotFoundThrows) {
@@ -518,10 +518,10 @@ TEST_F(MicrophoneTest, ReconfigureDifferentDeviceName) {
 
     EXPECT_NO_THROW(mic.reconfigure(test_deps_, new_config));
 
-    EXPECT_EQ(mic.device_name_, new_device_name);
-    EXPECT_EQ(mic.sample_rate_, 22000);
+    EXPECT_EQ(mic.stream_params_.device_name, new_device_name);
+    EXPECT_EQ(mic.stream_params_.sample_rate, 22000);
     EXPECT_EQ(mic.requested_sample_rate_, 22000);
-    EXPECT_EQ(mic.num_channels_, 2);
+    EXPECT_EQ(mic.stream_params_.num_channels, 2);
 }
 
 
@@ -546,9 +546,9 @@ TEST_F(MicrophoneTest, ReconfigureDifferentSampleRate) {
 
     EXPECT_NO_THROW(mic.reconfigure(test_deps_, new_config));
 
-    EXPECT_EQ(mic.device_name_, testDeviceName);
+    EXPECT_EQ(mic.stream_params_.device_name, testDeviceName);
     EXPECT_EQ(mic.requested_sample_rate_, 2000);
-    EXPECT_EQ(mic.num_channels_, 2);
+    EXPECT_EQ(mic.stream_params_.num_channels, 2);
 }
 
 
@@ -572,9 +572,9 @@ TEST_F(MicrophoneTest, ReconfigureDifferentNumChannels) {
 
     EXPECT_NO_THROW(mic.reconfigure(test_deps_, new_config));
 
-    EXPECT_EQ(mic.device_name_, testDeviceName);
-    EXPECT_EQ(mic.sample_rate_, test_utils::DEFAULT_DEVICE_SAMPLE_RATE);
-    EXPECT_EQ(mic.num_channels_, 1);
+    EXPECT_EQ(mic.stream_params_.device_name, testDeviceName);
+    EXPECT_EQ(mic.stream_params_.sample_rate, test_utils::DEFAULT_DEVICE_SAMPLE_RATE);
+    EXPECT_EQ(mic.stream_params_.num_channels, 1);
 }
 
 TEST_F(MicrophoneTest, ReconfigureChangesAudioContext) {

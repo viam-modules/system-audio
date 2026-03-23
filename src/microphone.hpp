@@ -56,12 +56,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     // Must NOT be called while holding stream_ctx_mu_.
     void try_restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context);
 
-    // Opens and starts a stream with the given params and context, updating stream_, stream_params_,
-    // audio_context_, and latency_. Must be called under stream_ctx_mu_. Throws on failure.
-    void open_and_start_stream(audio::utils::StreamParams params,
-                               std::shared_ptr<audio::InputStreamContext> new_context);
-
-    void setup_stream_params(audio::codec::AudioCodec codec_enum,
+void setup_stream_params(audio::codec::AudioCodec codec_enum,
                              MP3EncoderContext& mp3_ctx,
                              bool is_reconfigure,
                              int& stream_sample_rate,
@@ -72,11 +67,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
                              int& device_samples_per_chunk);
 
     // Member variables
-    std::string device_name_;
-    PaDeviceIndex device_index_;
-    int sample_rate_;            // Device's native sample rate (what stream is opened at)
     int requested_sample_rate_;  // User's requested sample rate (may differ from device rate)
-    int num_channels_;
     double latency_;
     int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;

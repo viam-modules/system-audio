@@ -87,15 +87,6 @@ class StreamGuard {
 
 // === Microphone Class Implementation ===
 
-void Microphone::open_and_start_stream(audio::utils::StreamParams params,
-                                        std::shared_ptr<audio::InputStreamContext> new_context) {
-    stream_params_ = params;
-    stream_params_.user_data = new_context.get();
-    audio::utils::openStream(stream_, stream_params_, pa_);
-    audio::utils::startStream(stream_, pa_);
-    latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
-    audio_context_ = std::move(new_context);
-}
 
 void Microphone::try_restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context) {
     std::lock_guard<std::mutex> lock(stream_ctx_mu_);
@@ -117,7 +108,10 @@ void Microphone::try_restart_stalled_stream(const std::shared_ptr<audio::InputSt
     const auto new_context = std::make_shared<audio::InputStreamContext>(info, audio::BUFFER_DURATION_SECONDS);
 
     try {
-        open_and_start_stream(stream_params_, new_context);
+        stream_params_.user_data = new_context.get();
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
+        audio_context_ = new_context;
         VIAM_SDK_LOG(info) << "[get_audio] Stream restarted successfully";
     } catch (const std::exception& e) {
         VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream: " << e.what();
@@ -136,9 +130,9 @@ void Microphone::setup_stream_params(AudioCodec codec_enum,
     // Get current stream parameters
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        stream_sample_rate = sample_rate_;
+        stream_sample_rate = stream_params_.sample_rate;
         requested_sample_rate = requested_sample_rate_;
-        stream_num_channels = num_channels_;
+        stream_num_channels = stream_params_.num_channels;
         stream_historical_throttle_ms = historical_throttle_ms_;
     }
 
@@ -188,18 +182,14 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
     // Set new configuration and start stream under lock
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-        stream_params_= setup.stream_params;
-        device_name_ = setup.stream_params.device_name;
-        device_index_ = setup.stream_params.device_index;
-        sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
+        stream_params_ = setup.stream_params;
+        stream_params_.user_data = setup.audio_context.get();
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
+        audio_context_ = setup.audio_context;
         requested_sample_rate_ =
             setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
-        num_channels_ = setup.stream_params.num_channels;
-        audio_context_ = setup.audio_context;
         historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
-
-        audio::utils::restart_stream(stream_, setup.stream_params, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
     }
 }
 
@@ -313,13 +303,13 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
 
-            open_and_start_stream(setup.stream_params, setup.audio_context);
-            device_name_ = setup.stream_params.device_name;
-            device_index_ = setup.stream_params.device_index;
-            sample_rate_ = setup.stream_params.sample_rate;  // Device's native sample rate
+            stream_params_ = setup.stream_params;
+            stream_params_.user_data = setup.audio_context.get();
+            audio::utils::restart_stream(stream_, stream_params_, pa_);
+            latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
+            audio_context_ = setup.audio_context;
             requested_sample_rate_ = setup.config_params.sample_rate.value_or(
                 setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
-            num_channels_ = setup.stream_params.num_channels;
             historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
         }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
@@ -607,7 +597,7 @@ viam::sdk::audio_properties Microphone::get_properties(const viam::sdk::ProtoStr
         vsdk::audio_codecs::PCM_16, vsdk::audio_codecs::PCM_32, vsdk::audio_codecs::PCM_32_FLOAT, vsdk::audio_codecs::MP3};
     std::lock_guard<std::mutex> lock(stream_ctx_mu_);
     props.sample_rate_hz = requested_sample_rate_;  // Return requested rate (what user will actually receive)
-    props.num_channels = num_channels_;
+    props.num_channels = stream_params_.num_channels;
 
     return props;
 }
