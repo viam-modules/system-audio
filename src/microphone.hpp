@@ -52,6 +52,15 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
     void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
+    // Restarts the stream. Should only be called after confirming the stream is stalled.
+    // Must NOT be called while holding stream_ctx_mu_.
+    void try_restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context);
+
+    // Opens and starts a stream with the given params and context, updating stream_, stream_params_,
+    // audio_context_, and latency_. Must be called under stream_ctx_mu_. Throws on failure.
+    void open_and_start_stream(audio::utils::StreamParams params,
+                               std::shared_ptr<audio::InputStreamContext> new_context);
+
     void setup_stream_params(audio::codec::AudioCodec codec_enum,
                              MP3EncoderContext& mp3_ctx,
                              bool is_reconfigure,
@@ -80,6 +89,8 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     const audio::portaudio::PortAudioInterface* pa_;
     // Count of active get_audio calls
     int active_streams_;
+
+    audio::utils::StreamParams stream_params_;
 };
 
 /**

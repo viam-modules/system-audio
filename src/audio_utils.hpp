@@ -10,6 +10,8 @@
 namespace audio {
 namespace utils {
 
+constexpr int STREAM_RESTART_THRESHOLD_MS = 1000;
+
 // Generic cleanup wrapper for functions with custom deleters
 template <auto cleanup_fp>
 struct Cleanup {
@@ -375,6 +377,7 @@ inline AudioDeviceSetup<ContextType> setup_audio_device(const viam::sdk::Resourc
 }
 
 constexpr uint64_t CALLBACK_STALENESS_THRESHOLD_MS = 1000;
+constexpr uint64_t STREAM_RESTART_THRESHOLD_MS = 5000;
 constexpr uint64_t STALENESS_LOG_THROTTLE_NS = 1'000'000'000ULL;  // Log at most once per second
 
 // Logs a warning if the audio callback hasn't fired recently, indicating the stream may have stalled.
