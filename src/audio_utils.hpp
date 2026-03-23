@@ -10,8 +10,6 @@
 namespace audio {
 namespace utils {
 
-constexpr int STREAM_RESTART_THRESHOLD_MS = 1000;
-
 // Generic cleanup wrapper for functions with custom deleters
 template <auto cleanup_fp>
 struct Cleanup {
@@ -323,10 +321,12 @@ inline double get_stream_latency(PaStream* stream, const StreamParams& params, c
     return params.is_input ? stream_info->inputLatency : stream_info->outputLatency;
 }
 
-inline void restart_stream(PaStream*& stream, const StreamParams& params, const audio::portaudio::PortAudioInterface* pa = nullptr) {
+inline void restart_stream(PaStream*& stream, StreamParams& params, void* user_data, const audio::portaudio::PortAudioInterface* pa = nullptr) {
     // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+
+    params.user_data = user_data;
 
     if (stream) {
         shutdown_stream(stream, pa);
@@ -376,7 +376,6 @@ inline AudioDeviceSetup<ContextType> setup_audio_device(const viam::sdk::Resourc
     return setup;
 }
 
-constexpr uint64_t CALLBACK_STALENESS_THRESHOLD_MS = 1000;
 constexpr uint64_t STREAM_RESTART_THRESHOLD_MS = 5000;
 constexpr uint64_t STALENESS_LOG_THROTTLE_NS = 1'000'000'000ULL;  // Log at most once per second
 
@@ -391,7 +390,7 @@ inline void log_callback_staleness(const std::atomic<uint64_t>& last_callback_ti
     if (last_cb > 0) {
         const uint64_t now_ns = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
         const uint64_t elapsed_ms = (now_ns - last_cb) / 1'000'000;
-        if (elapsed_ms > CALLBACK_STALENESS_THRESHOLD_MS && now_ns - last_log_ns > STALENESS_LOG_THROTTLE_NS) {
+        if (elapsed_ms > STREAM_RESTART_THRESHOLD_MS && now_ns - last_log_ns > STALENESS_LOG_THROTTLE_NS) {
             last_log_ns = now_ns;
             if (!stream) {
                 VIAM_SDK_LOG(error) << context << " log_callback_staleness called with null stream";

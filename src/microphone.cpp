@@ -108,8 +108,7 @@ void Microphone::try_restart_stalled_stream(const std::shared_ptr<audio::InputSt
     const auto new_context = std::make_shared<audio::InputStreamContext>(info, audio::BUFFER_DURATION_SECONDS);
 
     try {
-        stream_params_.user_data = new_context.get();
-        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        audio::utils::restart_stream(stream_, stream_params_, new_context.get(), pa_);
         latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = new_context;
         VIAM_SDK_LOG(info) << "[get_audio] Stream restarted successfully";
@@ -183,8 +182,7 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_params_ = setup.stream_params;
-        stream_params_.user_data = setup.audio_context.get();
-        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        audio::utils::restart_stream(stream_, stream_params_, setup.audio_context.get(), pa_);
         latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = setup.audio_context;
         requested_sample_rate_ =
@@ -304,8 +302,7 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
 
             stream_params_ = setup.stream_params;
-            stream_params_.user_data = setup.audio_context.get();
-            audio::utils::restart_stream(stream_, stream_params_, pa_);
+            audio::utils::restart_stream(stream_, stream_params_, setup.audio_context.get(), pa_);
             latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
             requested_sample_rate_ = setup.config_params.sample_rate.value_or(
