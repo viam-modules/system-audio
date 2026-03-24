@@ -31,7 +31,8 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, au
         sample_rate_ = setup.stream_params.sample_rate;
         num_channels_ = setup.stream_params.num_channels;
         audio_context_ = setup.audio_context;
-        audio::utils::restart_stream(stream_, setup.stream_params, setup.audio_context.get(), pa_);
+        setup.stream_params.user_data = setup.audio_context.get();
+        audio::utils::restart_stream(stream_, setup.stream_params, pa_);
         latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
         volume_ = setup.config_params.volume;
         if (volume_) {
@@ -417,7 +418,8 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             // Stop the stream first efore replacing audio_context_
             // Otherwise the callback thread may still be accessing the old context
             // after we destroy it (heap-use-after-free)
-            audio::utils::restart_stream(stream_, setup.stream_params, setup.audio_context.get(), pa_);
+            setup.stream_params.user_data = setup.audio_context.get();
+            audio::utils::restart_stream(stream_, setup.stream_params, pa_);
             device_name_ = setup.stream_params.device_name;
             sample_rate_ = setup.stream_params.sample_rate;
             num_channels_ = setup.stream_params.num_channels;

@@ -342,12 +342,11 @@ inline double get_stream_latency(PaStream* stream, const StreamParams& params, c
     return params.is_input ? stream_info->inputLatency : stream_info->outputLatency;
 }
 
-inline void restart_stream(PaStream*& stream, StreamParams& params, void* user_data, const audio::portaudio::PortAudioInterface* pa = nullptr) {
+// Note: caller must set params.user_data before calling.
+inline void restart_stream(PaStream*& stream, StreamParams& params, const audio::portaudio::PortAudioInterface* pa = nullptr) {
     // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
-
-    params.user_data = user_data;
 
     if (stream) {
         shutdown_stream(stream, pa);

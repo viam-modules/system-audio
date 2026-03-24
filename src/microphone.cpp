@@ -87,8 +87,7 @@ class StreamGuard {
 
 // === Microphone Class Implementation ===
 
-
-void Microphone::try_restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context) {
+void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context) {
     std::lock_guard<std::mutex> lock(stream_ctx_mu_);
     // Only restart if this is still the active context — another thread may have already restarted.
     if (stream_context != audio_context_) {
@@ -105,12 +104,12 @@ void Microphone::try_restart_stalled_stream(const std::shared_ptr<audio::InputSt
         stream_ = nullptr;
     }
 
-    const viam::sdk::audio_info info{
-        viam::sdk::audio_codecs::PCM_16, stream_params_.sample_rate, stream_params_.num_channels};
+    const viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, stream_params_.sample_rate, stream_params_.num_channels};
     const auto new_context = std::make_shared<audio::InputStreamContext>(info, audio::BUFFER_DURATION_SECONDS);
 
     try {
-        audio::utils::restart_stream(stream_, stream_params_, new_context.get(), pa_);
+        stream_params_.user_data = new_context.get();
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
         latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = new_context;
         restart_attempts_ = 0;
@@ -190,7 +189,8 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
     {
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_params_ = setup.stream_params;
-        audio::utils::restart_stream(stream_, stream_params_, setup.audio_context.get(), pa_);
+        stream_params_.user_data = setup.audio_context.get();
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
         latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = setup.audio_context;
         requested_sample_rate_ =
@@ -310,7 +310,8 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
 
             stream_params_ = setup.stream_params;
-            audio::utils::restart_stream(stream_, stream_params_, setup.audio_context.get(), pa_);
+            stream_params_.user_data = setup.audio_context.get();
+            audio::utils::restart_stream(stream_, stream_params_, pa_);
             latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
             requested_sample_rate_ = setup.config_params.sample_rate.value_or(
@@ -438,12 +439,11 @@ void Microphone::get_audio(std::string const& codec,
 
             const uint64_t last_cb = stream_context->last_callback_time_ns.load();
             if (last_cb > 0) {
-                const uint64_t now_ns =
-                    static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+                const uint64_t now_ns = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
                 const uint64_t stale_ms = (now_ns - last_cb) / 1'000'000;
                 if (stale_ms > audio::utils::STREAM_RESTART_THRESHOLD_MS) {
                     VIAM_SDK_LOG(warn) << "[get_audio] Stream stalled for " << stale_ms << "ms, attempting restart";
-                    try_restart_stalled_stream(stream_context);
+                    restart_stalled_stream(stream_context);
                 }
             }
 
