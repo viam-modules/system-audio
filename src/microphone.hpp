@@ -20,6 +20,7 @@ namespace microphone {
 namespace vsdk = ::viam::sdk;
 
 constexpr double DEFAULT_HISTORICAL_THROTTLE_MS = 50;
+constexpr int MAX_STREAM_RESTART_ATTEMPTS = 3;
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
 
 // Calculates the initial read position from a previous timestamp

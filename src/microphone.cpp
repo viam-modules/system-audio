@@ -94,7 +94,7 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
         return;
     }
 
-    VIAM_SDK_LOG(warn) << "[get_audio] Restarting stalled stream (attempt " << restart_attempts_ + 1 << "/3)";
+    VIAM_SDK_LOG(warn) << "[get_audio] Restarting stalled stream (attempt " << restart_attempts_ + 1 << "/" << MAX_STREAM_RESTART_ATTEMPTS << ")";
     if (stream_) {
         try {
             audio::utils::abort_stream(stream_, pa_);
@@ -116,11 +116,11 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
         VIAM_SDK_LOG(info) << "[get_audio] Stream restarted successfully";
     } catch (const std::exception& e) {
         ++restart_attempts_;
-        if (restart_attempts_ >= 3) {
-            VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream after 3 attempts, giving up: " << e.what();
+        if (restart_attempts_ >= MAX_STREAM_RESTART_ATTEMPTS) {
+            VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream after " << MAX_STREAM_RESTART_ATTEMPTS << " attempts, giving up: " << e.what();
             throw;
         }
-        VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream (attempt " << restart_attempts_ << "/3): " << e.what();
+        VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream (attempt " << restart_attempts_ << "/" << MAX_STREAM_RESTART_ATTEMPTS << "): " << e.what();
     }
 }
 
