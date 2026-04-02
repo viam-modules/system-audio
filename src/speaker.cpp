@@ -265,17 +265,22 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     size_t num_samples = decoded_data.size() / sizeof(int16_t);
 
     int speaker_sample_rate;
+    int speaker_num_channels;
 
-    // Validate decoded audio properties match speaker configuration
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
         speaker_sample_rate = sample_rate_;
-        if (audio_num_channels != num_channels_) {
-            VIAM_SDK_LOG(error) << "Channel mismatch: speaker=" << num_channels_ << " channels, decoded audio=" << audio_num_channels
-                                << " channels";
-            throw std::invalid_argument("Channel mismatch: speaker=" + std::to_string(num_channels_) +
-                                        " channels, decoded audio=" + std::to_string(audio_num_channels) + " channels");
-        }
+        speaker_num_channels = num_channels_;
+    }
+
+    // Convert channel count if needed (e.g. mono → stereo or stereo → mono)
+    std::vector<int16_t> channel_converted;
+    if (audio_num_channels != speaker_num_channels) {
+        VIAM_SDK_LOG(info) << "Converting audio from " << audio_num_channels << " to " << speaker_num_channels << " channels";
+        convert_channels(decoded_samples, num_samples, audio_num_channels, speaker_num_channels, channel_converted);
+        decoded_samples = channel_converted.data();
+        num_samples = channel_converted.size();
+        audio_num_channels = speaker_num_channels;
     }
 
     // Resample if sample rates don't match
