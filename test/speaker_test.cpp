@@ -805,9 +805,9 @@ TEST_F(SpeakerTest, CodecConversion_SampleRateMismatch) {
     });
 }
 
-TEST_F(SpeakerTest, CodecConversion_ChannelMismatch) {
-    int sample_rate = 48000;
-    int num_channels = 1;
+TEST_F(SpeakerTest, CodecConversion_ChannelConversion) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
 
     auto attributes = ProtoStruct{};
     attributes["sample_rate"] = static_cast<double>(sample_rate);
@@ -827,15 +827,26 @@ TEST_F(SpeakerTest, CodecConversion_ChannelMismatch) {
     Dependencies deps{};
     speaker::Speaker speaker(deps, config, mock_pa_.get());
 
-    std::vector<uint8_t> audio_data(100);
+    // Create stereo audio data (must be even number of samples for stereo)
+    const int num_samples = 100;
+    std::vector<int16_t> test_samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        test_samples[i] = static_cast<int16_t>(i % 1000);
+    }
+    std::vector<uint8_t> audio_data(num_samples * sizeof(int16_t));
+    std::memcpy(audio_data.data(), test_samples.data(), audio_data.size());
 
-    // Try to play PCM16 audio with different channel count
+    // Play stereo PCM16 audio on mono speaker — should convert, not throw
     viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, 2};
     ProtoStruct extra{};
 
-    EXPECT_THROW({
-        speaker.play(audio_data, info, extra);
-    }, std::invalid_argument);
+    // After stereo→mono conversion: 100 stereo samples become 50 mono samples
+    const int expected_samples = num_samples / 2;
+
+    // Set playback position so play() returns immediately after writing
+    speaker.audio_context_->playback_position.store(expected_samples);
+
+    EXPECT_NO_THROW(speaker.play(audio_data, info, extra));
 }
 
 

@@ -55,3 +55,31 @@ inline void resample_audio(int input_sample_rate,
     // Resize output buffer to match actual samples written (frames * channels)
     output_samples.resize(output_done_samples);
 }
+
+// Convert PCM16 audio between channel counts.
+// Supports mono→stereo (duplicate) and stereo→mono (average L+R).
+// output_samples will be resized and filled with converted data.
+inline void convert_channels(const int16_t* input_samples,
+                             size_t input_sample_count,
+                             int input_channels,
+                             int output_channels,
+                             std::vector<int16_t>& output_samples) {
+    if (input_channels == 1 && output_channels == 2) {
+        // Mono → stereo: duplicate each sample to both channels
+        output_samples.resize(input_sample_count * 2);
+        for (size_t i = 0; i < input_sample_count; i++) {
+            output_samples[i * 2] = input_samples[i];
+            output_samples[i * 2 + 1] = input_samples[i];
+        }
+    } else if (input_channels == 2 && output_channels == 1) {
+        // Stereo → mono: average left and right channels
+        output_samples.resize(input_sample_count / 2);
+        for (size_t i = 0; i < input_sample_count / 2; i++) {
+            output_samples[i] =
+                static_cast<int16_t>((static_cast<int32_t>(input_samples[i * 2]) + static_cast<int32_t>(input_samples[i * 2 + 1])) / 2);
+        }
+    } else {
+        throw std::invalid_argument("Unsupported channel conversion from " + std::to_string(input_channels) + " to " +
+                                    std::to_string(output_channels) + " channels");
+    }
+}
