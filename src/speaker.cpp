@@ -276,7 +276,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     // Convert channel count if needed (e.g. mono → stereo or stereo → mono)
     std::vector<int16_t> channel_converted;
     if (audio_num_channels != speaker_num_channels) {
-        VIAM_SDK_LOG(info) << "Converting audio from " << audio_num_channels << " to " << speaker_num_channels << " channels";
+        VIAM_SDK_LOG(debug) << "Converting audio from " << audio_num_channels << " to " << speaker_num_channels << " channels";
         convert_channels(decoded_samples, num_samples, audio_num_channels, speaker_num_channels, channel_converted);
         decoded_samples = channel_converted.data();
         num_samples = channel_converted.size();
