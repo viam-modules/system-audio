@@ -224,6 +224,13 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     // Parse codec string to enum
     const AudioCodec codec = audio::codec::parse_codec(codec_str);
 
+    // Detect and strip WAV header if present (e.g. Google Cloud TTS LINEAR16 includes one)
+    std::vector<uint8_t> raw_audio = audio_data;
+    if (raw_audio.size() >= 44 && raw_audio[0] == 'R' && raw_audio[1] == 'I' && raw_audio[2] == 'F' && raw_audio[3] == 'F') {
+        VIAM_SDK_LOG(debug) << "[play] Detected WAV header, stripping 44-byte header";
+        raw_audio.erase(raw_audio.begin(), raw_audio.begin() + 44);
+    }
+
     std::vector<uint8_t> decoded_data;
     int audio_sample_rate = info->sample_rate_hz;
     int audio_num_channels = info->num_channels;
@@ -232,32 +239,26 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     switch (codec) {
         case AudioCodec::MP3: {
             MP3DecoderContext mp3_ctx;
-            decode_mp3_to_pcm16(mp3_ctx, audio_data, decoded_data);
+            decode_mp3_to_pcm16(mp3_ctx, raw_audio, decoded_data);
             // For MP3, use the decoded properties from the file, not what user provided
             audio_sample_rate = mp3_ctx.sample_rate;
             audio_num_channels = mp3_ctx.num_channels;
             break;
         }
         case AudioCodec::PCM_32:
-            audio::codec::convert_pcm32_to_pcm16(audio_data.data(), audio_data.size(), decoded_data);
+            audio::codec::convert_pcm32_to_pcm16(raw_audio.data(), raw_audio.size(), decoded_data);
             break;
         case AudioCodec::PCM_32_FLOAT:
-            audio::codec::convert_float32_to_pcm16(audio_data.data(), audio_data.size(), decoded_data);
+            audio::codec::convert_float32_to_pcm16(raw_audio.data(), raw_audio.size(), decoded_data);
             break;
         case AudioCodec::PCM_16:
-            decoded_data = audio_data;
+            decoded_data = raw_audio;
             break;
         default:
             // Shouldn't ever get here because it will throw when converting the str to enum,
             // but for safety
             VIAM_SDK_LOG(error) << "Unsupported codec for playback: " << codec_str;
             throw std::invalid_argument("Unsupported codec for playback");
-    }
-
-    // Detect and strip WAV header if present
-    if (decoded_data.size() >= 44 && decoded_data[0] == 'R' && decoded_data[1] == 'I' && decoded_data[2] == 'F' && decoded_data[3] == 'F') {
-        VIAM_SDK_LOG(debug) << "[play] Detected WAV header in PCM16 data, stripping 44-byte header";
-        decoded_data.erase(decoded_data.begin(), decoded_data.begin() + 44);
     }
 
     // Convert uint8_t bytes to int16_t samples
