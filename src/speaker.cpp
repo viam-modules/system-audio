@@ -254,6 +254,13 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             throw std::invalid_argument("Unsupported codec for playback");
     }
 
+    // Detect and strip WAV header if present
+    if (decoded_data.size() >= 44 && decoded_data[0] == 'R' && decoded_data[1] == 'I' && decoded_data[2] == 'F' &&
+        decoded_data[3] == 'F') {
+        VIAM_SDK_LOG(debug) << "[play] Detected WAV header in PCM16 data, stripping 44-byte header";
+        decoded_data.erase(decoded_data.begin(), decoded_data.begin() + 44);
+    }
+
     // Convert uint8_t bytes to int16_t samples
     // PCM_16 means each sample is 2 bytes (16 bits)
     if (decoded_data.size() % 2 != 0) {
