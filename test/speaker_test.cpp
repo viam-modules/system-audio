@@ -850,6 +850,91 @@ TEST_F(SpeakerTest, CodecConversion_ChannelConversion) {
 }
 
 
+TEST_F(SpeakerTest, PlayPCM16WithWavHeader) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout",
+        "",
+        test_name_,
+        attributes,
+        "",
+        speaker::Speaker::model,
+        LinkConfig{},
+        log_level::info
+    );
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Create test PCM16 samples
+    const int num_samples = 100;
+    std::vector<int16_t> test_samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        test_samples[i] = static_cast<int16_t>(i * 100);
+    }
+
+    const size_t pcm_size = num_samples * sizeof(int16_t);
+
+    // Build a minimal 44-byte WAV header
+    std::vector<uint8_t> audio_data;
+    audio_data.resize(44 + pcm_size);
+
+    // RIFF header
+    audio_data[0] = 'R'; audio_data[1] = 'I'; audio_data[2] = 'F'; audio_data[3] = 'F';
+    // ChunkSize (file size - 8)
+    const uint32_t chunk_size = static_cast<uint32_t>(36 + pcm_size);
+    std::memcpy(&audio_data[4], &chunk_size, 4);
+    // WAVE
+    audio_data[8] = 'W'; audio_data[9] = 'A'; audio_data[10] = 'V'; audio_data[11] = 'E';
+    // fmt subchunk
+    audio_data[12] = 'f'; audio_data[13] = 'm'; audio_data[14] = 't'; audio_data[15] = ' ';
+    const uint32_t subchunk1_size = 16;
+    std::memcpy(&audio_data[16], &subchunk1_size, 4);
+    const uint16_t audio_format = 1; // PCM
+    std::memcpy(&audio_data[20], &audio_format, 2);
+    const uint16_t wav_channels = num_channels;
+    std::memcpy(&audio_data[22], &wav_channels, 2);
+    const uint32_t wav_sample_rate = sample_rate;
+    std::memcpy(&audio_data[24], &wav_sample_rate, 4);
+    const uint32_t byte_rate = sample_rate * num_channels * 2;
+    std::memcpy(&audio_data[28], &byte_rate, 4);
+    const uint16_t block_align = num_channels * 2;
+    std::memcpy(&audio_data[32], &block_align, 2);
+    const uint16_t bits_per_sample = 16;
+    std::memcpy(&audio_data[34], &bits_per_sample, 2);
+    // data subchunk
+    audio_data[36] = 'd'; audio_data[37] = 'a'; audio_data[38] = 't'; audio_data[39] = 'a';
+    const uint32_t data_size = static_cast<uint32_t>(pcm_size);
+    std::memcpy(&audio_data[40], &data_size, 4);
+
+    // Copy PCM samples after header
+    std::memcpy(&audio_data[44], test_samples.data(), pcm_size);
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Set playback position so play() returns immediately
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW(speaker.play(audio_data, info, extra));
+
+    // Verify only the PCM samples (not header bytes) were written to the buffer
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_EQ(read_buffer[i], test_samples[i]);
+    }
+}
+
  TEST_F(SpeakerTest, Play_ResamplesSampleRateMismatch) {
       // Speaker configured for 48000 Hz
       int speaker_sample_rate = 48000;
