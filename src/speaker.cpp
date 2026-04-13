@@ -224,16 +224,19 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     // Parse codec string to enum
     const AudioCodec codec = audio::codec::parse_codec(codec_str);
 
-    // Detect and strip WAV header if present (e.g. Google Cloud TTS LINEAR16 includes one)
+    // Detect and strip WAV header if present
     std::vector<uint8_t> raw_audio = audio_data;
+    int audio_sample_rate = info->sample_rate_hz;
+    int audio_num_channels = info->num_channels;
     if (raw_audio.size() >= 44 && raw_audio[0] == 'R' && raw_audio[1] == 'I' && raw_audio[2] == 'F' && raw_audio[3] == 'F') {
-        VIAM_SDK_LOG(debug) << "[play] Detected WAV header, stripping 44-byte header";
+        audio_num_channels = raw_audio[22] | (raw_audio[23] << 8);
+        audio_sample_rate = raw_audio[24] | (raw_audio[25] << 8) | (raw_audio[26] << 16) | (raw_audio[27] << 24);
+        VIAM_SDK_LOG(debug) << "[play] Detected WAV header (" << audio_sample_rate << "Hz, " << audio_num_channels
+                            << "ch), stripping 44-byte header";
         raw_audio.erase(raw_audio.begin(), raw_audio.begin() + 44);
     }
 
     std::vector<uint8_t> decoded_data;
-    int audio_sample_rate = info->sample_rate_hz;
-    int audio_num_channels = info->num_channels;
 
     // decode to pcm16
     switch (codec) {
