@@ -130,12 +130,8 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const uint8_t* encoded_data, si
 
     // Feed ALL data to LAME once - it buffers internally
     // First call may return 0
-    int decoded_samples = hip_decode1_headers(ctx.decoder.get(),
-                                              const_cast<unsigned char*>(encoded_data + offset),
-                                              mp3_data_size,
-                                              pcm_left.data(),
-                                              pcm_right.data(),
-                                              &mp3data);
+    int decoded_samples = hip_decode1_headers(
+        ctx.decoder.get(), const_cast<unsigned char*>(encoded_data + offset), mp3_data_size, pcm_left.data(), pcm_right.data(), &mp3data);
 
     if (decoded_samples < 0) {
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Error decoding MP3 data";

@@ -143,10 +143,7 @@ int wav_num_channels(const uint8_t* data) {
 }
 
 int wav_sample_rate(const uint8_t* data) {
-    return uint32_t(data[24])
-         | (uint32_t(data[25]) << 8)
-         | (uint32_t(data[26]) << 16)
-         | (uint32_t(data[27]) << 24);
+    return uint32_t(data[24]) | (uint32_t(data[25]) << 8) | (uint32_t(data[26]) << 16) | (uint32_t(data[27]) << 24);
 }
 
 }  // namespace codec
