@@ -24,9 +24,9 @@ MP3DecoderContext::~MP3DecoderContext() {
 }
 
 // helper to skip id3 tag: https://id3.org/id3v2.3.0
-static size_t get_id3v2_offset(const std::vector<uint8_t>& data) {
+static size_t get_id3v2_offset(const uint8_t* const data, const size_t size) {
     // For safety: id3 header is 10 bytes
-    if (data.size() < 10) {
+    if (size < 10) {
         return 0;
     }
 
@@ -80,41 +80,41 @@ static void append_samples(std::vector<uint8_t>& output_data,
     }
 
     // Append the raw bytes of interleaved samples to output_data
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(interleaved.data());
+    const uint8_t* const bytes = reinterpret_cast<const uint8_t*>(interleaved.data());
     output_data.insert(output_data.end(), bytes, bytes + interleaved.size() * sizeof(int16_t));
 }
 
-void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& encoded_data, std::vector<uint8_t>& decoded_data) {
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const uint8_t* const encoded_data, const size_t size, std::vector<uint8_t>& decoded_data) {
     if (!ctx.decoder) {
         VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: MP3 decoder not initialized";
         throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder not initialized");
     }
 
-    if (encoded_data.empty()) {
+    if (size == 0) {
         VIAM_SDK_LOG(debug) << "decode_mp3_to_pcm16: no data to decode";
         return;
     }
 
     // Skip ID3v2 tag if present
-    size_t offset = get_id3v2_offset(encoded_data);
+    size_t offset = get_id3v2_offset(encoded_data, size);
     if (offset > 0) {
         VIAM_SDK_LOG(debug) << "Skipped ID3v2 tag of size " << offset << " bytes";
     }
 
     // Scan for first MP3 frame sync (0xFF followed by 0xE0 mask)
-    while (offset + 1 < encoded_data.size()) {
+    while (offset + 1 < size) {
         if (encoded_data[offset] == 0xFF && (encoded_data[offset + 1] & 0xE0) == 0xE0) {
             break;
         }
         offset++;
     }
 
-    if (offset >= encoded_data.size()) {
+    if (offset >= size) {
         VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: No MP3 frame sync found";
         throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder: no valid frame found");
     }
 
-    const size_t mp3_data_size = encoded_data.size() - offset;
+    const size_t mp3_data_size = size - offset;
 
     VIAM_SDK_LOG(debug) << "Decoding MP3 data, buffer size after sync scan: " << mp3_data_size << " (skipped " << offset << " bytes total)";
 
@@ -130,12 +130,8 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
 
     // Feed ALL data to LAME once - it buffers internally
     // First call may return 0
-    int decoded_samples = hip_decode1_headers(ctx.decoder.get(),
-                                              const_cast<unsigned char*>(encoded_data.data() + offset),
-                                              mp3_data_size,
-                                              pcm_left.data(),
-                                              pcm_right.data(),
-                                              &mp3data);
+    int decoded_samples = hip_decode1_headers(
+        ctx.decoder.get(), const_cast<unsigned char*>(encoded_data + offset), mp3_data_size, pcm_left.data(), pcm_right.data(), &mp3data);
 
     if (decoded_samples < 0) {
         VIAM_SDK_LOG(error) << "[decode_mp3_to_pcm16]: Error decoding MP3 data";
@@ -200,6 +196,10 @@ void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& enc
 
     VIAM_SDK_LOG(debug) << "[decode_mp3_to_pcm16]: Total decoded: " << (decoded_data.size() / sizeof(int16_t) / ctx.num_channels)
                         << " frames (" << decoded_data.size() << " bytes)";
+}
+
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& encoded_data, std::vector<uint8_t>& decoded_data) {
+    decode_mp3_to_pcm16(ctx, encoded_data.data(), encoded_data.size(), decoded_data);
 }
 
 }  // namespace speaker

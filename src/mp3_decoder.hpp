@@ -21,6 +21,7 @@ struct MP3DecoderContext {
     ~MP3DecoderContext();
 };
 
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const uint8_t* encoded_data, size_t size, std::vector<uint8_t>& output_data);
 void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const std::vector<uint8_t>& encoded_data, std::vector<uint8_t>& output_data);
 
 }  // namespace speaker

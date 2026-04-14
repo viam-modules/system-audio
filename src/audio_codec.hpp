@@ -33,6 +33,12 @@ void copy_pcm16(const int16_t* samples, int sample_count, std::vector<uint8_t>& 
 void convert_pcm32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
 void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
 
+// WAV header utilities
+constexpr size_t wav_header_size = 44;
+bool has_wav_header(const uint8_t* data, size_t size);
+int wav_num_channels(const uint8_t* data);
+int wav_sample_rate(const uint8_t* data);
+
 // Encode audio chunk based on codec type
 // Dispatches to appropriate encoding function based on codec
 void encode_audio_chunk(AudioCodec codec,

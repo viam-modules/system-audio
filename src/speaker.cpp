@@ -224,28 +224,45 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     // Parse codec string to enum
     const AudioCodec codec = audio::codec::parse_codec(codec_str);
 
-    std::vector<uint8_t> decoded_data;
+    // Detect and strip WAV header if present
+    const uint8_t* raw_audio = audio_data.data();
+    size_t raw_audio_size = audio_data.size();
     int audio_sample_rate = info->sample_rate_hz;
     int audio_num_channels = info->num_channels;
+    if (audio::codec::has_wav_header(raw_audio, raw_audio_size)) {
+        audio_num_channels = audio::codec::wav_num_channels(raw_audio);
+        audio_sample_rate = audio::codec::wav_sample_rate(raw_audio);
+        VIAM_SDK_LOG(debug) << "[play] Detected WAV header (" << audio_sample_rate << "Hz, " << audio_num_channels << "ch), stripping "
+                            << audio::codec::wav_header_size << "-byte header";
+        raw_audio += audio::codec::wav_header_size;
+        raw_audio_size -= audio::codec::wav_header_size;
+    }
+
+    // decoded_buf holds converted data for non-PCM_16 codecs
+    std::vector<uint8_t> decoded_buf;
+    const uint8_t* decoded_data = nullptr;
+    size_t decoded_size = 0;
 
     // decode to pcm16
     switch (codec) {
         case AudioCodec::MP3: {
             MP3DecoderContext mp3_ctx;
-            decode_mp3_to_pcm16(mp3_ctx, audio_data, decoded_data);
+            decode_mp3_to_pcm16(mp3_ctx, raw_audio, raw_audio_size, decoded_buf);
             // For MP3, use the decoded properties from the file, not what user provided
             audio_sample_rate = mp3_ctx.sample_rate;
             audio_num_channels = mp3_ctx.num_channels;
             break;
         }
         case AudioCodec::PCM_32:
-            audio::codec::convert_pcm32_to_pcm16(audio_data.data(), audio_data.size(), decoded_data);
+            audio::codec::convert_pcm32_to_pcm16(raw_audio, raw_audio_size, decoded_buf);
             break;
         case AudioCodec::PCM_32_FLOAT:
-            audio::codec::convert_float32_to_pcm16(audio_data.data(), audio_data.size(), decoded_data);
+            audio::codec::convert_float32_to_pcm16(raw_audio, raw_audio_size, decoded_buf);
             break;
         case AudioCodec::PCM_16:
-            decoded_data = audio_data;
+            // No conversion needed — point directly at the input data
+            decoded_data = raw_audio;
+            decoded_size = raw_audio_size;
             break;
         default:
             // Shouldn't ever get here because it will throw when converting the str to enum,
@@ -254,15 +271,21 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             throw std::invalid_argument("Unsupported codec for playback");
     }
 
+    // If we decoded into the buffer, point at it
+    if (!decoded_buf.empty()) {
+        decoded_data = decoded_buf.data();
+        decoded_size = decoded_buf.size();
+    }
+
     // Convert uint8_t bytes to int16_t samples
     // PCM_16 means each sample is 2 bytes (16 bits)
-    if (decoded_data.size() % 2 != 0) {
-        VIAM_SDK_LOG(error) << "Audio data size must be even for PCM_16 format, got " << decoded_data.size() << " bytes";
+    if (decoded_size % 2 != 0) {
+        VIAM_SDK_LOG(error) << "Audio data size must be even for PCM_16 format, got " << decoded_size << " bytes";
         throw std::invalid_argument("got invalid data size, cannot convert to int16");
     }
 
-    const int16_t* decoded_samples = reinterpret_cast<const int16_t*>(decoded_data.data());
-    size_t num_samples = decoded_data.size() / sizeof(int16_t);
+    const int16_t* decoded_samples = reinterpret_cast<const int16_t*>(decoded_data);
+    size_t num_samples = decoded_size / sizeof(int16_t);
 
     int speaker_sample_rate;
     int speaker_num_channels;
