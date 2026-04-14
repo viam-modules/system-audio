@@ -34,6 +34,7 @@ void convert_pcm32_to_pcm16(const uint8_t* input_data, int byte_count, std::vect
 void convert_float32_to_pcm16(const uint8_t* input_data, int byte_count, std::vector<uint8_t>& output);
 
 // WAV header utilities
+constexpr size_t wav_header_size = 44;
 bool has_wav_header(const uint8_t* data, size_t size);
 int wav_num_channels(const uint8_t* data);
 int wav_sample_rate(const uint8_t* data);

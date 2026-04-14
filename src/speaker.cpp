@@ -233,9 +233,9 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         audio_num_channels = audio::codec::wav_num_channels(raw_audio);
         audio_sample_rate = audio::codec::wav_sample_rate(raw_audio);
         VIAM_SDK_LOG(debug) << "[play] Detected WAV header (" << audio_sample_rate << "Hz, " << audio_num_channels
-                            << "ch), stripping 44-byte header";
-        raw_audio += 44;
-        raw_audio_size -= 44;
+                            << "ch), stripping " << audio::codec::wav_header_size << "-byte header";
+        raw_audio += audio::codec::wav_header_size;
+        raw_audio_size -= audio::codec::wav_header_size;
     }
 
     // decoded_buf holds converted data for non-PCM_16 codecs

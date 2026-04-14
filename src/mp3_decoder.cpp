@@ -24,7 +24,7 @@ MP3DecoderContext::~MP3DecoderContext() {
 }
 
 // helper to skip id3 tag: https://id3.org/id3v2.3.0
-static size_t get_id3v2_offset(const uint8_t* data, size_t size) {
+static size_t get_id3v2_offset(const uint8_t* const data, const size_t size) {
     // For safety: id3 header is 10 bytes
     if (size < 10) {
         return 0;
@@ -80,11 +80,11 @@ static void append_samples(std::vector<uint8_t>& output_data,
     }
 
     // Append the raw bytes of interleaved samples to output_data
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(interleaved.data());
+    const uint8_t* const bytes = reinterpret_cast<const uint8_t*>(interleaved.data());
     output_data.insert(output_data.end(), bytes, bytes + interleaved.size() * sizeof(int16_t));
 }
 
-void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const uint8_t* encoded_data, size_t size, std::vector<uint8_t>& decoded_data) {
+void decode_mp3_to_pcm16(MP3DecoderContext& ctx, const uint8_t* const encoded_data, const size_t size, std::vector<uint8_t>& decoded_data) {
     if (!ctx.decoder) {
         VIAM_SDK_LOG(error) << "decode_mp3_to_pcm16: MP3 decoder not initialized";
         throw std::runtime_error("decode_mp3_to_pcm16: MP3 decoder not initialized");
