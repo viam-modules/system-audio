@@ -138,12 +138,19 @@ bool has_wav_header(const uint8_t* const data, const size_t size) {
     return size >= wav_header_size && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F';
 }
 
+// WAV header byte offsets per spec: https://en.wikipedia.org/wiki/WAV#WAV_file_header
+constexpr size_t wav_num_channels_offset = 22;
+constexpr size_t wav_sample_rate_offset = 24;
+
 int wav_num_channels(const uint8_t* const data) {
-    return data[22] | (data[23] << 8);
+    return data[wav_num_channels_offset] | (data[wav_num_channels_offset + 1] << 8);
 }
 
 int wav_sample_rate(const uint8_t* const data) {
-    return uint32_t(data[24]) | (uint32_t(data[25]) << 8) | (uint32_t(data[26]) << 16) | (uint32_t(data[27]) << 24);
+    return uint32_t(data[wav_sample_rate_offset])
+         | (uint32_t(data[wav_sample_rate_offset + 1]) << 8)
+         | (uint32_t(data[wav_sample_rate_offset + 2]) << 16)
+         | (uint32_t(data[wav_sample_rate_offset + 3]) << 24);
 }
 
 }  // namespace codec
