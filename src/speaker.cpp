@@ -232,8 +232,8 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     if (audio::codec::has_wav_header(raw_audio, raw_audio_size)) {
         audio_num_channels = audio::codec::wav_num_channels(raw_audio);
         audio_sample_rate = audio::codec::wav_sample_rate(raw_audio);
-        VIAM_SDK_LOG(debug) << "[play] Detected WAV header (" << audio_sample_rate << "Hz, " << audio_num_channels
-                            << "ch), stripping " << audio::codec::wav_header_size << "-byte header";
+        VIAM_SDK_LOG(debug) << "[play] Detected WAV header (" << audio_sample_rate << "Hz, " << audio_num_channels << "ch), stripping "
+                            << audio::codec::wav_header_size << "-byte header";
         raw_audio += audio::codec::wav_header_size;
         raw_audio_size -= audio::codec::wav_header_size;
     }

@@ -147,10 +147,8 @@ int wav_num_channels(const uint8_t* const data) {
 }
 
 int wav_sample_rate(const uint8_t* const data) {
-    return uint32_t(data[wav_sample_rate_offset])
-         | (uint32_t(data[wav_sample_rate_offset + 1]) << 8)
-         | (uint32_t(data[wav_sample_rate_offset + 2]) << 16)
-         | (uint32_t(data[wav_sample_rate_offset + 3]) << 24);
+    return uint32_t(data[wav_sample_rate_offset]) | (uint32_t(data[wav_sample_rate_offset + 1]) << 8) |
+           (uint32_t(data[wav_sample_rate_offset + 2]) << 16) | (uint32_t(data[wav_sample_rate_offset + 3]) << 24);
 }
 
 }  // namespace codec
