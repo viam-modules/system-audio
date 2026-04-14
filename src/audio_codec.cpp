@@ -134,5 +134,20 @@ void encode_audio_chunk(AudioCodec codec,
     }
 }
 
+bool has_wav_header(const uint8_t* data, size_t size) {
+    return size >= 44 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F';
+}
+
+int wav_num_channels(const uint8_t* data) {
+    return data[22] | (data[23] << 8);
+}
+
+int wav_sample_rate(const uint8_t* data) {
+    return uint32_t(data[24])
+         | (uint32_t(data[25]) << 8)
+         | (uint32_t(data[26]) << 16)
+         | (uint32_t(data[27]) << 24);
+}
+
 }  // namespace codec
 }  // namespace audio
