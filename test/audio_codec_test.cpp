@@ -75,6 +75,23 @@ TEST_F(WavHeaderTest, ParsesSampleRate16000) {
     EXPECT_EQ(wav_sample_rate(header.data()), 16000);
 }
 
+TEST_F(WavHeaderTest, ParsesCorrectlyWithAudioPayload) {
+    const int sample_rate = 48000;
+    const int num_channels = 2;
+    auto wav = make_wav_header(sample_rate, num_channels);
+
+    // Append 100 samples of PCM audio data after the header
+    const size_t num_samples = 100;
+    for (size_t i = 0; i < num_samples * sizeof(int16_t); i++) {
+        wav.push_back(static_cast<uint8_t>(i & 0xFF));
+    }
+
+    EXPECT_TRUE(has_wav_header(wav.data(), wav.size()));
+    EXPECT_EQ(wav_num_channels(wav.data()), num_channels);
+    EXPECT_EQ(wav_sample_rate(wav.data()), sample_rate);
+    EXPECT_EQ(wav.size(), audio::codec::wav_header_size + num_samples * sizeof(int16_t));
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);
