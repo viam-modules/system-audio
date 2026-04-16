@@ -91,6 +91,6 @@ class audio(ConanFile):
             with tarfile.open(os.path.join(self.deploy_folder, "module.tar.gz"), "w|gz") as tar:
                 tar.add(tmp_dir, arcname=".", recursive=True)
 
-                self.output.debug("module.tar.gz contents:")
+                self.output.info("module.tar.gz contents:")
                 for mem in tar.getmembers():
-                    self.output.debug(mem.name)
+                    self.output.info(mem.name)
