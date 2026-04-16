@@ -99,7 +99,7 @@ endif()
 
 install(TARGETS audio-module DESTINATION .)
 install(FILES meta.json DESTINATION .)
-install(PROGRAMS run.sh DESTINATION .)
+install(PROGRAMS run.sh darwin_tcc.sh DESTINATION .)
 
 # Bundle JACK and its dependencies into binary
 if(LINUX)
