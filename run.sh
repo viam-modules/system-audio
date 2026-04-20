@@ -4,7 +4,7 @@
 # On macOS, when running as root (uid=0), delegates to darwin_tcc.sh which re-launches
 # the binary as a LaunchAgent in the console user's GUI session for TCC microphone access.
 # In all other cases, exec the binary directly.
-
+set -e
 echo "run.sh: running as $(whoami) (uid=$(id -u))"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

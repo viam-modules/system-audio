@@ -7,6 +7,7 @@
 # in the console user's GUI session (gui/<uid>) — the only launchd domain where
 # TCC consent applies. It then acts as a supervisor, blocking until the agent
 # exits or receives SIGTERM.
+set -e
 
 MODULE_BIN="$1"
 shift
@@ -14,7 +15,7 @@ shift
 CONSOLE_USER=$(stat -f '%Su' /dev/console)
 
 if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
-    echo "run.sh: WARNING: no console user found; microphone will not work due to TCC restrictions." >&2
+    echo "darwin_tcc.sh: WARNING: no console user found; microphone will not work due to TCC restrictions." >&2
     exec "$MODULE_BIN" "$@"
 fi
 
@@ -24,7 +25,7 @@ DOMAIN="gui/$CONSOLE_UID"
 TARGET_BIN="/tmp/viam-audio-module-${VIAM_MACHINE_PART_ID:-default}"
 PLIST_PATH="/tmp/${LABEL}.plist"
 
-echo "run.sh: console user is $CONSOLE_USER (uid=$CONSOLE_UID)"
+echo "darwin_tcc.sh: console user is $CONSOLE_USER (uid=$CONSOLE_UID)"
 
 # Securely copy binary to /tmp so the console user can traverse the path.
 # The module may be installed under /var/root/ (drwx------) which the console
@@ -85,7 +86,7 @@ ${ENV_DICT}
 </plist>
 PLIST
 
-echo "run.sh: wrote plist to $PLIST_PATH"
+echo "darwin_tcc.sh: wrote plist to $PLIST_PATH"
 
 # Remove any stale agent from a previous run
 sudo -u "$CONSOLE_USER" launchctl bootout "$DOMAIN"/"$LABEL" 2>/dev/null || true
@@ -94,16 +95,16 @@ sudo -u "$CONSOLE_USER" launchctl bootout "$DOMAIN"/"$LABEL" 2>/dev/null || true
 # Aqua/WindowServer session domain — the only domain where TCC grants apply)
 BOOTSTRAP_OUT=$(sudo -u "$CONSOLE_USER" launchctl bootstrap "$DOMAIN" "$PLIST_PATH" 2>&1)
 BOOTSTRAP_RC=$?
-echo "run.sh: bootstrap exit=$BOOTSTRAP_RC output=$BOOTSTRAP_OUT"
 
 cleanup() {
-    echo "run.sh: cleaning up launchd agent $LABEL"
+    echo "darwin_tcc.sh: cleaning up launchd agent $LABEL"
     sudo -u "$CONSOLE_USER" launchctl bootout "$DOMAIN"/"$LABEL" 2>/dev/null || true
     rm -f "$PLIST_PATH"
+    rm -f "$TARGET_BIN"
 }
 
 handle_term() {
-    echo "run.sh: received SIGTERM"
+    echo "darwin_tcc.sh: received SIGTERM"
     cleanup
     exit 0
 }
@@ -111,25 +112,24 @@ handle_term() {
 trap handle_term TERM INT
 
 # Kickstart the agent in the user's session
-echo "run.sh: starting launchd agent $LABEL as $CONSOLE_USER"
+echo "darwin_tcc.sh: starting launchd agent $LABEL as $CONSOLE_USER"
 KICKSTART_OUT=$(sudo -u "$CONSOLE_USER" launchctl kickstart "$DOMAIN"/"$LABEL" 2>&1)
 KICKSTART_RC=$?
-echo "run.sh: kickstart exit=$KICKSTART_RC output=$KICKSTART_OUT"
 
 # Wait for the agent to obtain a PID (up to 15s)
-echo "run.sh: waiting for launchd agent to start..."
+echo "darwin_tcc.sh: waiting for launchd agent to start..."
 AGENT_PID=""
 for i in $(seq 1 30); do
     AGENT_PID=$(launchctl print "$DOMAIN"/"$LABEL" 2>/dev/null | awk '/^\tpid = / {print $3}')
     if [ -n "$AGENT_PID" ]; then
-        echo "run.sh: launchd agent is running (pid=$AGENT_PID)"
+        echo "darwin_tcc.sh: launchd agent is running (pid=$AGENT_PID)"
         break
     fi
     sleep 0.5
 done
 
 if [ -z "$AGENT_PID" ]; then
-    echo "run.sh: WARNING: launchd agent did not report a PID within 15s" >&2
+    echo "darwin_tcc.sh: WARNING: launchd agent did not report a PID within 15s" >&2
 fi
 
 # Block until the agent process exits
