@@ -27,7 +27,7 @@ The following attributes are available for the `viam:audio:microphone` model:
 
 | Name          | Type   | Inclusion | Description                |
 |---------------|--------|-----------|----------------------------|
-| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, configuration fails. |
+| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, logs a warning and falls through to `device_name` (or the system default). |
 | `device_name` | string | **Optional** | The PortAudio device name to stream audio from. Used when `device_id` is not set. If neither is specified, the system default will be used. |
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels to capture. Must not exceed the device's maximum input channels. Default: 1 |
@@ -83,7 +83,7 @@ The following attributes are available for the `viam:audio:speaker` model:
 
 | Name          | Type   | Inclusion | Description                |
 |---------------|--------|-----------|----------------------------|
-| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, configuration fails. |
+| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, logs a warning and falls through to `device_name` (or the system default). |
 | `device_name` | string | **Optional** | The PortAudio device name to play audio from. Used when `device_id` is not set. If neither is specified, the system default will be used. |
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the output stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels of the output stream. Must not exceed the device's maximum output channels. Default: 1 |
