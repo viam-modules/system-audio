@@ -3,6 +3,7 @@
 #include <gmock/gmock.h>
 #include <viam/sdk/common/instance.hpp>
 #include "../src/audio_stream.hpp"
+#include "../src/device_id.hpp"
 #include "../src/portaudio.hpp"
 #include "portaudio.h"
 
@@ -47,6 +48,15 @@ public:
     MOCK_METHOD(PaError, isFormatSupported, (const PaStreamParameters* inputParameters,
                                              const PaStreamParameters* outputParameters,
                                              double sampleRate), (const, override));
+};
+
+/**
+ * Mock DeviceIdResolver for exercising discovery without touching Core Audio
+ * or sysfs. Tests program it with EXPECT_CALL / ON_CALL like any other mock.
+ */
+class MockDeviceIdResolver : public audio::device_id::DeviceIdResolver {
+public:
+    MOCK_METHOD(std::string, resolve, (PaDeviceIndex index, const PaDeviceInfo& info), (const, override));
 };
 
 // Base test fixture with common PortAudio mock setup

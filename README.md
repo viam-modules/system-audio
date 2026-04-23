@@ -110,6 +110,31 @@ The speaker supports the following DoCommands:
 This model is used to discover audio devices on your machine.
 No configuration is needed, expand the test card or look at the discovery control card to obtain configurations for all connected audio devices.
 
+### Discovery output
+
+Each discovered device is returned as a component config with the standard
+microphone/speaker attributes (`device_name`, `sample_rate`, `num_channels`)
+plus a `device_id` attribute.
+
+`device_id` is a best-effort OS-provided identifier for the underlying
+hardware intended to be stable across reboots. It is informational — the
+microphone and speaker components still open the device via `device_name`.
+Format and stability depend on the platform:
+
+| Platform | Source | Example |
+|----------|--------|---------|
+| macOS | Core Audio `kAudioDevicePropertyDeviceUID` | `BuiltInMicrophoneDevice` |
+| Linux, udev by-id | `/dev/snd/by-id/` symlink | `by-id:usb-Logitech_USB_Headset_A00000000000-00` |
+| Linux, udev by-path | `/dev/snd/by-path/` symlink | `by-path:pci-0000:00:14.0-usb-0:1.3:1.0` |
+| Linux, fallback | `/sys/class/sound/cardN/id` | `alsa-card:PCH` |
+
+Resolution order on Linux is by-id (descriptor-based, survives USB port
+moves) → by-path (topology-based, stable across reboots but breaks on port
+moves) → card id fallback (used when udev doesn't populate the above).
+Only ALSA `hw:X,Y` devices are resolved; virtual endpoints (`default`,
+`pulse`, etc.) get an empty id. The attribute is always present so callers
+can rely on it.
+
 
 ## Audio Format
 

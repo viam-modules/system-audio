@@ -15,8 +15,9 @@ vsdk::Model AudioDiscovery::model = vsdk::Model("viam", "system-audio", "discove
 
 AudioDiscovery::AudioDiscovery(vsdk::Dependencies dependencies,
                                vsdk::ResourceConfig configuration,
-                               audio::portaudio::PortAudioInterface* pa)
-    : Discovery(configuration.name()), pa_(pa) {}
+                               audio::portaudio::PortAudioInterface* pa,
+                               audio::device_id::DeviceIdResolver* resolver)
+    : Discovery(configuration.name()), pa_(pa), resolver_(resolver ? resolver : &default_resolver_) {}
 
 std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk::ProtoStruct& extra) {
     std::vector<vsdk::ResourceConfig> configs;
@@ -35,6 +36,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                                        const std::string& device_type,
                                        const std::string& api,
                                        const std::string& device_name,
+                                       const std::string& device_id,
                                        const double sample_rate,
                                        const int num_channels,
                                        int count,
@@ -42,6 +44,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
         try {
             vsdk::ProtoStruct attributes;
             attributes.emplace("device_name", device_name);
+            attributes.emplace("device_id", device_id);
             attributes.emplace("sample_rate", sample_rate);
             attributes.emplace("num_channels", num_channels);
 
@@ -68,17 +71,19 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                                  const std::string& device_type,
                                  const std::string& api,
                                  const std::string& device_name,
+                                 const std::string& device_id,
                                  const double sample_rate,
                                  const int num_channels,
                                  int& counter) {
         ++counter;
 
         std::stringstream deviceInfoString;
-        deviceInfoString << "discovered " << device_name << ", default sample rate: " << sample_rate << ", max channels: " << num_channels;
+        deviceInfoString << "discovered " << device_name << ", device_id: " << (device_id.empty() ? "<none>" : device_id)
+                         << ", default sample rate: " << sample_rate << ", max channels: " << num_channels;
         VIAM_RESOURCE_LOG(debug) << deviceInfoString.str();
 
         vsdk::ResourceConfig config =
-            create_device_config(component_type, device_type, api, device_name, sample_rate, num_channels, counter, model);
+            create_device_config(component_type, device_type, api, device_name, device_id, sample_rate, num_channels, counter, model);
         configs.push_back(config);
     };
     int count_input = 0;
@@ -88,6 +93,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
         const PaDeviceInfo* info = pa_ ? pa_->getDeviceInfo(i) : Pa_GetDeviceInfo(i);
         const std::string device_name = info->name;
         const double sample_rate = info->defaultSampleRate;
+        const std::string device_id = resolver_->resolve(i, *info);
 
         if (info->maxInputChannels > 0) {
             add_device_config(microphone::Microphone::model,
@@ -95,6 +101,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                               "microphone",
                               "rdk:component:audio_in",
                               device_name,
+                              device_id,
                               sample_rate,
                               info->maxInputChannels,
                               count_input);
@@ -105,6 +112,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                               "speaker",
                               "rdk:component:audio_out",
                               device_name,
+                              device_id,
                               sample_rate,
                               info->maxOutputChannels,
                               count_output);
