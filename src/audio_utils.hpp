@@ -104,8 +104,25 @@ inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) 
     const auto attrs = cfg.attributes();
     ConfigParams params;
 
+    {
+        std::ostringstream keys;
+        for (auto it = attrs.begin(); it != attrs.end(); ++it) {
+            if (it != attrs.begin())
+                keys << ", ";
+            keys << it->first;
+        }
+        VIAM_SDK_LOG(info) << "[parseConfigAttributes] received " << attrs.size() << " attribute(s): [" << keys.str() << "]";
+    }
+
     if (attrs.count("device_id")) {
-        params.device_id = *attrs.at("device_id").get<std::string>();
+        const auto* value = attrs.at("device_id").get<std::string>();
+        VIAM_SDK_LOG(info) << "[parseConfigAttributes] device_id present, get<std::string>() returned "
+                           << (value ? ("\"" + *value + "\"") : std::string{"nullptr"});
+        if (value) {
+            params.device_id = *value;
+        }
+    } else {
+        VIAM_SDK_LOG(info) << "[parseConfigAttributes] device_id attribute not present in config";
     }
 
     if (attrs.count("device_name")) {
@@ -152,22 +169,35 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
     PaDeviceIndex device_index = paNoDevice;
     const PaDeviceInfo* deviceInfo = nullptr;
 
+    VIAM_SDK_LOG(info) << "[setupStreamFromConfig] entering with device_id='" << device_id << "' (len=" << device_id.size()
+                       << "), device_name='" << device_name << "' (len=" << device_name.size() << ")";
+
     StreamParams stream_params = StreamParams{};
 
     // Lookup order: stable device_id (preferred — survives reboots) →
-    // device_name (legacy) → system default.
+    // device_name (legacy) → system default. device_id falls through on
+    // miss so a config carrying an outdated id can still boot via its
+    // device_name rather than failing hard.
     if (!device_id.empty()) {
         device_index = findDeviceById(device_id, audio_interface, resolver);
-        if (device_index == paNoDevice) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio device with id '" << device_id << "' not found";
-            throw std::runtime_error("audio device with id " + device_id + " not found");
+        if (device_index != paNoDevice) {
+            deviceInfo = audio_interface.getDeviceInfo(device_index);
+            if (!deviceInfo) {
+                VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device id: " << device_id;
+                throw std::runtime_error("failed to get device info for device id: " + device_id);
+            }
+            VIAM_SDK_LOG(info) << "[setupStreamFromConfig] Resolved device_id '" << device_id << "' to device '"
+                               << (deviceInfo->name ? deviceInfo->name : "<unnamed>") << "'";
+        } else if (!device_name.empty()) {
+            VIAM_SDK_LOG(warn) << "[setupStreamFromConfig] Audio device with id '" << device_id
+                               << "' not found, falling back to device_name '" << device_name << "'";
+        } else {
+            VIAM_SDK_LOG(warn) << "[setupStreamFromConfig] Audio device with id '" << device_id
+                               << "' not found, falling back to system default";
         }
-        deviceInfo = audio_interface.getDeviceInfo(device_index);
-        if (!deviceInfo) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device id: " << device_id;
-            throw std::runtime_error("failed to get device info for device id: " + device_id);
-        }
-    } else if (!device_name.empty()) {
+    }
+
+    if (device_index == paNoDevice && !device_name.empty()) {
         device_index = findDeviceByName(device_name, audio_interface);
         if (device_index == paNoDevice) {
             VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio device with name '" << device_name << "' not found";
@@ -178,7 +208,9 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
             VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device: " << device_name;
             throw std::runtime_error("failed to get device info for device: " + device_name);
         }
-    } else {
+    }
+
+    if (device_index == paNoDevice) {
         if (direction == StreamDirection::Input) {
             device_index = audio_interface.getDefaultInputDevice();
         } else {
