@@ -68,9 +68,7 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
     // PortAudio does not publicly expose the underlying Core Audio
     // AudioDeviceID for a PaDeviceIndex, so we enumerate Core Audio devices
     // and match by name.
-    AudioObjectPropertyAddress devices_addr{kAudioHardwarePropertyDevices,
-                                            kAudioObjectPropertyScopeGlobal,
-                                            kMainElement};
+    AudioObjectPropertyAddress devices_addr{kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kMainElement};
     UInt32 data_size = 0;
     if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devices_addr, 0, nullptr, &data_size) != noErr) {
         VIAM_SDK_LOG(warn) << "[device_id] Failed to query Core Audio device list size for \"" << target_name << "\"";
@@ -115,13 +113,13 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
 
 #elif defined(__linux__)
 
+#include <dirent.h>
+#include <unistd.h>
 #include <cctype>
 #include <climits>
-#include <dirent.h>
 #include <fstream>
 #include <regex>
 #include <sstream>
-#include <unistd.h>
 
 namespace audio {
 namespace device_id {
