@@ -5,6 +5,7 @@
 #include <string>
 #include <viam/sdk/components/audio_out.hpp>
 #include "audio_stream.hpp"
+#include "device_id.hpp"
 #include "portaudio.hpp"
 
 namespace audio {
@@ -29,6 +30,7 @@ using CleanupPtr = std::unique_ptr<typename Cleanup<cleanup_fp>::value_type, Cle
 enum class StreamDirection { Input, Output };
 
 struct ConfigParams {
+    std::string device_id;
     std::string device_name;
     std::optional<int> sample_rate;
     std::optional<int> num_channels;
@@ -73,9 +75,38 @@ inline PaDeviceIndex findDeviceByName(const std::string& name, const audio::port
     return paNoDevice;
 }
 
+// Helper function to find a device by the stable id reported by the
+// discovery resolver. Returns paNoDevice if no device on the system
+// currently resolves to the given id.
+inline PaDeviceIndex findDeviceById(const std::string& id,
+                                    const audio::portaudio::PortAudioInterface& pa,
+                                    const audio::device_id::DeviceIdResolver& resolver) {
+    const int deviceCount = pa.getDeviceCount();
+    if (deviceCount < 0) {
+        return paNoDevice;
+    }
+
+    for (PaDeviceIndex i = 0; i < deviceCount; i++) {
+        const PaDeviceInfo* info = pa.getDeviceInfo(i);
+        if (!info) {
+            VIAM_SDK_LOG(warn) << "could not get device info for device index " << i << ", skipping";
+            continue;
+        }
+
+        if (resolver.resolve(i, *info) == id) {
+            return i;
+        }
+    }
+    return paNoDevice;
+}
+
 inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) {
     const auto attrs = cfg.attributes();
     ConfigParams params;
+
+    if (attrs.count("device_id")) {
+        params.device_id = *attrs.at("device_id").get<std::string>();
+    }
 
     if (attrs.count("device_name")) {
         params.device_name = *attrs.at("device_name").get<std::string>();
@@ -114,14 +145,40 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
     // In production pa is nullptr and real_pa is used. For testing, pa is the mock pa
     audio::portaudio::RealPortAudio real_pa;
     const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+    audio::device_id::RealDeviceIdResolver resolver;
 
+    const std::string& device_id = params.device_id;
     const std::string& device_name = params.device_name;
     PaDeviceIndex device_index = paNoDevice;
     const PaDeviceInfo* deviceInfo = nullptr;
 
     StreamParams stream_params = StreamParams{};
 
-    if (device_name.empty()) {
+    // Lookup order: stable device_id (preferred — survives reboots) →
+    // device_name (legacy) → system default.
+    if (!device_id.empty()) {
+        device_index = findDeviceById(device_id, audio_interface, resolver);
+        if (device_index == paNoDevice) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio device with id '" << device_id << "' not found";
+            throw std::runtime_error("audio device with id " + device_id + " not found");
+        }
+        deviceInfo = audio_interface.getDeviceInfo(device_index);
+        if (!deviceInfo) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device id: " << device_id;
+            throw std::runtime_error("failed to get device info for device id: " + device_id);
+        }
+    } else if (!device_name.empty()) {
+        device_index = findDeviceByName(device_name, audio_interface);
+        if (device_index == paNoDevice) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio device with name '" << device_name << "' not found";
+            throw std::runtime_error("audio device with name " + device_name + " not found");
+        }
+        deviceInfo = audio_interface.getDeviceInfo(device_index);
+        if (!deviceInfo) {
+            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device: " << device_name;
+            throw std::runtime_error("failed to get device info for device: " + device_name);
+        }
+    } else {
         if (direction == StreamDirection::Input) {
             device_index = audio_interface.getDefaultInputDevice();
         } else {
@@ -141,17 +198,6 @@ inline StreamParams setupStreamFromConfig(const ConfigParams& params,
             throw std::runtime_error("failed to get the name of the default device");
         }
         VIAM_SDK_LOG(debug) << "[setupStreamFromConfig] Found default device named " << deviceInfo->name;
-    } else {
-        device_index = findDeviceByName(device_name, audio_interface);
-        if (device_index == paNoDevice) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Audio device with name '" << device_name << "' not found";
-            throw std::runtime_error("audio device with name " + device_name + " not found");
-        }
-        deviceInfo = audio_interface.getDeviceInfo(device_index);
-        if (!deviceInfo) {
-            VIAM_SDK_LOG(error) << "[setupStreamFromConfig] Failed to get device info for device: " << device_name;
-            throw std::runtime_error("failed to get device info for device: " + device_name);
-        }
     }
 
     stream_params.device_index = device_index;
