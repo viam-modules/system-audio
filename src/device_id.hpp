@@ -19,8 +19,9 @@ class DeviceIdResolver {
 
 // Production resolver. On macOS it returns Core Audio's
 // kAudioDevicePropertyDeviceUID via name matching. On Linux it returns
-// "usb:VID:PID[:SERIAL]" for USB devices or "alsa-card:<kernel-id>" for
-// built-in hardware, via sysfs. On other platforms it always returns "".
+// a udev-maintained symlink name ("by-id:<...>" or "by-path:<...>"), or
+// "alsa-card:<kernel-id>" when udev sound rules aren't populated. On
+// other platforms it always returns "".
 class RealDeviceIdResolver : public DeviceIdResolver {
    public:
     std::string resolve(PaDeviceIndex index, const PaDeviceInfo& info) const override;

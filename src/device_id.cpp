@@ -120,6 +120,7 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <string_view>
 
 namespace audio {
 namespace device_id {
@@ -153,11 +154,14 @@ std::string basename_of(const std::string& path) {
 // True if a sound device node basename (e.g. "controlC1", "pcmC1D0p")
 // belongs to the given ALSA card number.
 bool node_belongs_to_card(const std::string& node, const std::string& card_num) {
+    constexpr std::string_view kControlPrefix = "controlC";
+    constexpr std::string_view kPcmPrefix = "pcmC";
+
     size_t i = 0;
-    if (node.compare(0, 8, "controlC") == 0) {
-        i = 8;
-    } else if (node.compare(0, 4, "pcmC") == 0) {
-        i = 4;
+    if (node.compare(0, kControlPrefix.size(), kControlPrefix) == 0) {
+        i = kControlPrefix.size();
+    } else if (node.compare(0, kPcmPrefix.size(), kPcmPrefix) == 0) {
+        i = kPcmPrefix.size();
     } else {
         return false;
     }
