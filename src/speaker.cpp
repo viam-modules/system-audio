@@ -111,6 +111,12 @@ int speakerCallback(const void* inputBuffer,
 std::vector<std::string> Speaker::validate(vsdk::ResourceConfig cfg) {
     auto attrs = cfg.attributes();
 
+    if (attrs.count("device_id")) {
+        if (!attrs["device_id"].is_a<std::string>()) {
+            VIAM_SDK_LOG(error) << "[validate] device_id attribute must be a string";
+            throw std::invalid_argument("device_id attribute must be a string");
+        }
+    }
     if (attrs.count("device_name")) {
         if (!attrs["device_name"].is_a<std::string>()) {
             VIAM_SDK_LOG(error) << "[validate] device_name attribute must be a string";

@@ -14,6 +14,7 @@ The following attribute template can be used to configure this model:
 
 ```json
 {
+  "device_id": <DEVICE_ID>,
   "device_name" : <DEVICE_NAME>,
   "sample_rate": <SAMPLE_RATE>,
   "num_channels": <NUM_CHANNELS>,
@@ -26,7 +27,8 @@ The following attributes are available for the `viam:audio:microphone` model:
 
 | Name          | Type   | Inclusion | Description                |
 |---------------|--------|-----------|----------------------------|
-| `device_name` | string | **Optional** | The PortAudio device name to stream audio from. If not specified, the system default will be used. |
+| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, logs a warning and falls through to `device_name` (or the system default). |
+| `device_name` | string | **Optional** | The PortAudio device name to stream audio from. Used when `device_id` is not set. If neither is specified, the system default will be used. |
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels to capture. Must not exceed the device's maximum input channels. Default: 1 |
 | `latency` | int | **Optional** | Suggested input latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide more responsive audio capture but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
@@ -67,6 +69,7 @@ The following attribute template can be used to configure this model:
 
 ```json
 {
+  "device_id": <DEVICE_ID>,
   "device_name" : <DEVICE_NAME>,
   "sample_rate": <SAMPLE_RATE>,
   "num_channels": <NUM_CHANNELS>,
@@ -80,7 +83,8 @@ The following attributes are available for the `viam:audio:speaker` model:
 
 | Name          | Type   | Inclusion | Description                |
 |---------------|--------|-----------|----------------------------|
-| `device_name` | string | **Optional** | The PortAudio device name to play audio from. If not specified, the system default will be used. |
+| `device_id` | string | **Optional** | Stable device id from discovery (survives reboots). Takes precedence over `device_name` when both are set. If the id cannot be resolved on the current system, logs a warning and falls through to `device_name` (or the system default). |
+| `device_name` | string | **Optional** | The PortAudio device name to play audio from. Used when `device_id` is not set. If neither is specified, the system default will be used. |
 | `sample_rate` | int | **Optional** | The sample rate in Hz of the output stream. If not specified, the device's default sample rate will be used. |
 | `num_channels` | int | **Optional** | The number of audio channels of the output stream. Must not exceed the device's maximum output channels. Default: 1 |
 | `latency` | int | **Optional** | Suggested output latency in milliseconds. This controls how much audio PortAudio buffers before making it available. Lower values (5-20ms) provide faster audio output but use more CPU time. Higher values (50-100ms) are more stable but less responsive. If not specified, uses the device's default low latency setting (typically 10-20ms). |
@@ -109,6 +113,31 @@ The speaker supports the following DoCommands:
 
 This model is used to discover audio devices on your machine.
 No configuration is needed, expand the test card or look at the discovery control card to obtain configurations for all connected audio devices.
+
+### Discovery output
+
+Each discovered device is returned as a component config with the standard
+microphone/speaker attributes (`device_name`, `sample_rate`, `num_channels`)
+plus a `device_id` attribute.
+
+`device_id` is a best-effort OS-provided identifier for the underlying
+hardware intended to be stable across reboots. It is informational — the
+microphone and speaker components still open the device via `device_name`.
+Format and stability depend on the platform:
+
+| Platform | Source | Example |
+|----------|--------|---------|
+| macOS | Core Audio `kAudioDevicePropertyDeviceUID` | `BuiltInMicrophoneDevice` |
+| Linux, udev by-id | `/dev/snd/by-id/` symlink | `by-id:usb-Logitech_USB_Headset_A00000000000-00` |
+| Linux, udev by-path | `/dev/snd/by-path/` symlink | `by-path:pci-0000:00:14.0-usb-0:1.3:1.0` |
+| Linux, fallback | `/sys/class/sound/cardN/id` | `alsa-card:PCH` |
+
+Resolution order on Linux is by-id (descriptor-based, survives USB port
+moves) → by-path (topology-based, stable across reboots but breaks on port
+moves) → card id fallback (used when udev doesn't populate the above).
+Only ALSA `hw:X,Y` devices are resolved; virtual endpoints (`default`,
+`pulse`, etc.) get an empty id. The attribute is always present so callers
+can rely on it.
 
 
 ## Audio Format
