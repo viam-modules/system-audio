@@ -25,7 +25,7 @@ class audio(ConanFile):
         "shared": True
     }
 
-    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*", "meta.json", "run.sh"
+    exports_sources = "CMakeLists.txt", "LICENSE", "src/*", "test/*", "meta.json", "run.sh", "darwin_tcc.sh"
 
     def set_version(self):
         content = load(self, "CMakeLists.txt")
@@ -76,6 +76,9 @@ class audio(ConanFile):
             self.output.info("Copying run.sh")
             copy(self, "run.sh", src=self.package_folder, dst=tmp_dir)
 
+            self.output.info("Copying darwin_tcc.sh")
+            copy(self, "darwin_tcc.sh", src=self.package_folder, dst=tmp_dir)
+
             # Copy bundled libraries if they exist (for Linux runtime dependencies)
             lib_folder = os.path.join(self.package_folder, "lib")
             if os.path.exists(lib_folder):
@@ -88,6 +91,6 @@ class audio(ConanFile):
             with tarfile.open(os.path.join(self.deploy_folder, "module.tar.gz"), "w|gz") as tar:
                 tar.add(tmp_dir, arcname=".", recursive=True)
 
-                self.output.debug("module.tar.gz contents:")
+                self.output.info("module.tar.gz contents:")
                 for mem in tar.getmembers():
-                    self.output.debug(mem.name)
+                    self.output.info(mem.name)
