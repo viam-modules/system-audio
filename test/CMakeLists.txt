@@ -18,6 +18,7 @@ function(audio_add_gtest SOURCE_FILE_NAME)
         ${CMAKE_SOURCE_DIR}/src/audio_stream.cpp
         ${CMAKE_SOURCE_DIR}/src/discovery.cpp
         ${CMAKE_SOURCE_DIR}/src/device_id.cpp
+        ${CMAKE_SOURCE_DIR}/src/routing_filter.cpp
         ${CMAKE_SOURCE_DIR}/src/audio_buffer.cpp
         ${CMAKE_SOURCE_DIR}/src/speaker.cpp
         ${CMAKE_SOURCE_DIR}/src/mp3_encoder.cpp
@@ -80,3 +81,4 @@ audio_add_gtest(mp3_decoder_test.cpp)
 audio_add_gtest(audio_buffer_test.cpp)
 audio_add_gtest(resample_test.cpp)
 audio_add_gtest(audio_codec_test.cpp)
+audio_add_gtest(file_utils_test.cpp)
