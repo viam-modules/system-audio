@@ -148,8 +148,7 @@ bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input) {
     snd_ctl_t* raw_ctl = nullptr;
     const std::string ctl_name = "hw:" + card_str;
     if (snd_ctl_open(&raw_ctl, ctl_name.c_str(), 0) < 0) {
-        VIAM_SDK_LOG(warn) << "[routing_filter] snd_ctl_open failed for " << ctl_name
-                           << "; not filtering its PCMs";
+        VIAM_SDK_LOG(warn) << "[routing_filter] snd_ctl_open failed for " << ctl_name << "; not filtering its PCMs";
         return false;
     }
     const std::unique_ptr<snd_ctl_t, int (*)(snd_ctl_t*)> ctl(raw_ctl, &snd_ctl_close);
