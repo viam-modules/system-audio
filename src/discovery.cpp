@@ -1,4 +1,5 @@
 #include "discovery.hpp"
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <viam/sdk/config/resource.hpp>
@@ -6,6 +7,7 @@
 #include <viam/sdk/services/discovery.hpp>
 #include "microphone.hpp"
 #include "portaudio.hpp"
+#include "routing_filter.hpp"
 #include "speaker.hpp"
 
 namespace discovery {
@@ -89,13 +91,25 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
     int count_input = 0;
     int count_output = 0;
 
+    auto is_unrouted = [&](const PaDeviceInfo& info, bool is_input, const char* dir) {
+        if (audio::routing::is_unrouted_admaif(info, is_input)) {
+            VIAM_RESOURCE_LOG(debug) << "Skipping unrouted Tegra ADMAIF " << dir << ": " << info.name;
+            return true;
+        }
+        return false;
+    };
+
     for (int i = 0; i < numDevices; i++) {
         const PaDeviceInfo* info = pa_ ? pa_->getDeviceInfo(i) : Pa_GetDeviceInfo(i);
         const std::string device_name = info->name;
         const double sample_rate = info->defaultSampleRate;
         const std::string device_id = resolver_->resolve(i, *info);
 
-        if (info->maxInputChannels > 0) {
+        // Module only supports mono/stereo, clamp to what we can
+        // actually use.
+        constexpr int kMaxSupportedChannels = 2;
+
+        if (info->maxInputChannels > 0 && !is_unrouted(*info, true, "input")) {
             add_device_config(microphone::Microphone::model,
                               "audio_in",
                               "microphone",
@@ -103,10 +117,10 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                               device_name,
                               device_id,
                               sample_rate,
-                              info->maxInputChannels,
+                              std::min(info->maxInputChannels, kMaxSupportedChannels),
                               count_input);
         }
-        if (info->maxOutputChannels > 0) {
+        if (info->maxOutputChannels > 0 && !is_unrouted(*info, false, "output")) {
             add_device_config(speaker::Speaker::model,
                               "audio_out",
                               "speaker",
@@ -114,7 +128,7 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
                               device_name,
                               device_id,
                               sample_rate,
-                              info->maxOutputChannels,
+                              std::min(info->maxOutputChannels, kMaxSupportedChannels),
                               count_output);
         }
     }
