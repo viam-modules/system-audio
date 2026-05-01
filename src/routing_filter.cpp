@@ -1,19 +1,56 @@
 #include "routing_filter.hpp"
 
-#if defined(__linux__)
-
-#include <alsa/asoundlib.h>
-#include <memory>
-#include <string>
+#include <cctype>
 #include <string_view>
-#include <unordered_set>
-
-#include <viam/sdk/common/utils.hpp>
 
 #include "file_utils.hpp"
 
+#if defined(__linux__)
+#include <alsa/asoundlib.h>
+#include <memory>
+
+#include <viam/sdk/common/utils.hpp>
+#endif
+
 namespace audio {
 namespace routing {
+
+int parse_admaif_index(const std::string& s, std::size_t pos) {
+    constexpr std::string_view ADMAIF_PREFIX = "ADMAIF";
+    if (s.compare(pos, ADMAIF_PREFIX.size(), ADMAIF_PREFIX) != 0) {
+        return -1;
+    }
+    const std::size_t digit_start = pos + ADMAIF_PREFIX.size();
+    if (digit_start >= s.size() || !std::isdigit(static_cast<unsigned char>(s[digit_start]))) {
+        return -1;
+    }
+    return std::stoi(s.substr(digit_start));
+}
+
+bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input, const ApeRoutingMap& routing) {
+    if (!info.name) {
+        return false;
+    }
+    const auto hw = audio::utils::parse_alsa_hw(info.name);
+    if (!hw) {
+        return false;
+    }
+
+    const auto it = routing.find(hw->card_num);
+    if (it == routing.end()) {
+        // Either not an APE card or we couldn't open it — leave it alone.
+        return false;
+    }
+
+    // On Tegra APE, ALSA PCM device N exposes ADMAIF<N+1>. Verified against
+    // `aplay -l` on Orin Nano: device 0 → XBAR-ADMAIF1-0, device 1 →
+    // XBAR-ADMAIF2-1, etc.
+    const int admaif_n = hw->device_num + 1;
+    const auto& set = is_input ? it->second.routed_inputs : it->second.routed_outputs;
+    return set.count(admaif_n) == 0;
+}
+
+#if defined(__linux__)
 
 namespace {
 
@@ -27,19 +64,6 @@ bool is_tegra_ape_card(const std::string& card_num) {
 bool ends_with(const std::string& s, const char* suffix) {
     const size_t n = std::char_traits<char>::length(suffix);
     return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
-}
-
-// Parses "ADMAIF12" → 12. Returns -1 on mismatch.
-int parse_admaif_index(const std::string& s, size_t pos = 0) {
-    constexpr std::string_view ADMAIF_PREFIX = "ADMAIF";
-    if (s.compare(pos, ADMAIF_PREFIX.size(), ADMAIF_PREFIX) != 0) {
-        return -1;
-    }
-    const size_t digit_start = pos + ADMAIF_PREFIX.size();
-    if (digit_start >= s.size() || !std::isdigit(static_cast<unsigned char>(s[digit_start]))) {
-        return -1;
-    }
-    return std::stoi(s.substr(digit_start));
 }
 
 unsigned int read_enum_value(snd_ctl_t* ctl, snd_ctl_elem_id_t* id) {
@@ -159,42 +183,13 @@ ApeRoutingMap scan_ape_cards() {
     return result;
 }
 
-bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input, const ApeRoutingMap& routing) {
-    if (!info.name) {
-        return false;
-    }
-    const auto hw = audio::utils::parse_alsa_hw(info.name);
-    if (!hw) {
-        return false;
-    }
-
-    const auto it = routing.find(hw->card_num);
-    if (it == routing.end()) {
-        // Either not an APE card or we couldn't open it — leave it alone.
-        return false;
-    }
-
-    // On Tegra APE, ALSA PCM device N exposes ADMAIF<N+1>. Verified against
-    // `aplay -l` on Orin Nano: device 0 → XBAR-ADMAIF1-0, device 1 →
-    // XBAR-ADMAIF2-1, etc.
-    const int admaif_n = hw->device_num + 1;
-    const auto& set = is_input ? it->second.routed_inputs : it->second.routed_outputs;
-    return set.count(admaif_n) == 0;
-}
-
-}  // namespace routing
-}  // namespace audio
-
 #else
 
-namespace audio {
-namespace routing {
-
-bool is_unrouted_admaif(const PaDeviceInfo&, bool, const ApeRoutingMap&) {
-    return false;
+ApeRoutingMap scan_ape_cards() {
+    return {};
 }
+
+#endif
 
 }  // namespace routing
 }  // namespace audio
-
-#endif
