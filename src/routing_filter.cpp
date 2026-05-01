@@ -132,7 +132,34 @@ void scan_card(snd_ctl_t* ctl, std::unordered_set<int>& routed_inputs, std::unor
 
 }  // namespace
 
-bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input) {
+ApeRoutingMap scan_ape_cards() {
+    ApeRoutingMap result;
+    int card = -1;
+    while (true) {
+        if (snd_card_next(&card) < 0 || card < 0) {
+            break;
+        }
+        const std::string card_str = std::to_string(card);
+        if (!is_tegra_ape_card(card_str)) {
+            continue;
+        }
+
+        snd_ctl_t* raw_ctl = nullptr;
+        const std::string ctl_name = "hw:" + card_str;
+        if (snd_ctl_open(&raw_ctl, ctl_name.c_str(), 0) < 0) {
+            VIAM_SDK_LOG(warn) << "[routing_filter] snd_ctl_open failed for " << ctl_name << "; not filtering its PCMs";
+            continue;
+        }
+        const std::unique_ptr<snd_ctl_t, int (*)(snd_ctl_t*)> ctl(raw_ctl, &snd_ctl_close);
+
+        CardRouting routing;
+        scan_card(ctl.get(), routing.routed_inputs, routing.routed_outputs);
+        result.emplace(card, std::move(routing));
+    }
+    return result;
+}
+
+bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input, const ApeRoutingMap& routing) {
     if (!info.name) {
         return false;
     }
@@ -140,28 +167,18 @@ bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input) {
     if (!hw) {
         return false;
     }
-    const std::string card_str = std::to_string(hw->card_num);
-    if (!is_tegra_ape_card(card_str)) {
+
+    const auto it = routing.find(hw->card_num);
+    if (it == routing.end()) {
+        // Either not an APE card or we couldn't open it — leave it alone.
         return false;
     }
-
-    snd_ctl_t* raw_ctl = nullptr;
-    const std::string ctl_name = "hw:" + card_str;
-    if (snd_ctl_open(&raw_ctl, ctl_name.c_str(), 0) < 0) {
-        VIAM_SDK_LOG(warn) << "[routing_filter] snd_ctl_open failed for " << ctl_name << "; not filtering its PCMs";
-        return false;
-    }
-    const std::unique_ptr<snd_ctl_t, int (*)(snd_ctl_t*)> ctl(raw_ctl, &snd_ctl_close);
-
-    std::unordered_set<int> routed_inputs;
-    std::unordered_set<int> routed_outputs;
-    scan_card(ctl.get(), routed_inputs, routed_outputs);
 
     // On Tegra APE, ALSA PCM device N exposes ADMAIF<N+1>. Verified against
     // `aplay -l` on Orin Nano: device 0 → XBAR-ADMAIF1-0, device 1 →
     // XBAR-ADMAIF2-1, etc.
     const int admaif_n = hw->device_num + 1;
-    const auto& set = is_input ? routed_inputs : routed_outputs;
+    const auto& set = is_input ? it->second.routed_inputs : it->second.routed_outputs;
     return set.count(admaif_n) == 0;
 }
 
@@ -173,7 +190,7 @@ bool is_unrouted_admaif(const PaDeviceInfo& info, bool is_input) {
 namespace audio {
 namespace routing {
 
-bool is_unrouted_admaif(const PaDeviceInfo&, bool) {
+bool is_unrouted_admaif(const PaDeviceInfo&, bool, const ApeRoutingMap&) {
     return false;
 }
 

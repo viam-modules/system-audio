@@ -91,8 +91,12 @@ std::vector<vsdk::ResourceConfig> AudioDiscovery::discover_resources(const vsdk:
     int count_input = 0;
     int count_output = 0;
 
+    // Scan APE-card cross-bar routing once up front; the per-device check below
+    // is then a pure hash lookup.
+    const audio::routing::ApeRoutingMap ape_routing = audio::routing::scan_ape_cards();
+
     auto is_unrouted = [&](const PaDeviceInfo& info, bool is_input, const char* dir) {
-        if (audio::routing::is_unrouted_admaif(info, is_input)) {
+        if (audio::routing::is_unrouted_admaif(info, is_input, ape_routing)) {
             VIAM_RESOURCE_LOG(debug) << "Skipping unrouted Tegra ADMAIF " << dir << ": " << info.name;
             return true;
         }
