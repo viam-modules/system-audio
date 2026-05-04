@@ -17,6 +17,7 @@ add_executable(audio-module
     src/speaker.cpp
     src/discovery.cpp
     src/device_id.cpp
+    src/routing_filter.cpp
     src/mp3_encoder.cpp
     src/mp3_decoder.cpp
 )

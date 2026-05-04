@@ -117,34 +117,14 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
 #include <unistd.h>
 #include <cctype>
 #include <climits>
-#include <fstream>
-#include <regex>
-#include <sstream>
 #include <string_view>
+
+#include "file_utils.hpp"
 
 namespace audio {
 namespace device_id {
 
 namespace {
-
-std::string trim(const std::string& s) {
-    const size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) {
-        return "";
-    }
-    const size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
-
-std::string read_file(const std::string& path) {
-    std::ifstream f(path);
-    if (!f) {
-        return "";
-    }
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return trim(ss.str());
-}
 
 std::string basename_of(const std::string& path) {
     const auto pos = path.find_last_of('/');
@@ -209,16 +189,14 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
     }
     const std::string name = info.name;
 
-    // Extract the ALSA card index from PortAudio's device name, e.g.
-    // "USB PnP Sound Device: Audio (hw:1,0)" => 1. Virtual endpoints like
-    // "default" or "pulse" will not match — they are not bound to specific
-    // hardware so an empty id is the correct answer.
-    static const std::regex hw_regex(R"(\(hw:(\d+)(?:,\d+)?\))");
-    std::smatch m;
-    if (!std::regex_search(name, m, hw_regex)) {
+    // Virtual endpoints like "default" or "pulse" don't have an (hw:X,Y)
+    // segment — they aren't bound to specific hardware so an empty id is
+    // the correct answer.
+    const auto hw = audio::utils::parse_alsa_hw(name);
+    if (!hw) {
         return "";
     }
-    const std::string card_num = m[1].str();
+    const std::string card_num = std::to_string(hw->card_num);
 
     // Prefer udev's descriptor-based symlink — stable across reboots and
     // USB port changes, and disambiguates identical devices when they
@@ -235,7 +213,7 @@ std::string RealDeviceIdResolver::resolve(PaDeviceIndex /*index*/, const PaDevic
     // Final fallback for systems whose udev rules don't populate the above
     // (minimal containers, some embedded distros). The kernel-assigned
     // card id is driver-derived and stable on the same hardware topology.
-    const std::string kernel_id = read_file("/sys/class/sound/card" + card_num + "/id");
+    const std::string kernel_id = audio::utils::read_file("/sys/class/sound/card" + card_num + "/id");
     if (!kernel_id.empty()) {
         return "alsa-card:" + kernel_id;
     }

@@ -230,6 +230,60 @@ TEST_F(DiscoveryTest, MixedInputOutputDevices) {
     EXPECT_EQ(configs[2].name(), "microphone-2");
 }
 
+TEST_F(DiscoveryTest, InputChannelsClampedToTwo) {
+    // Tegra ADMAIFs and HDMI 7.1 cards report large channel counts that
+    // the module's mono/stereo pipeline cannot use. Discovery must clamp.
+    const std::string test_name = "Phantom 16-Channel Input";
+    createMockDevices({{test_name, 16, 0, 48000.0}});
+
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(1));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&device_infos_[0]));
+
+    AudioDiscovery discovery(deps_, *config_, mock_pa_.get(), mock_resolver_.get());
+    auto configs = discovery.discover_resources(ProtoStruct{});
+
+    ASSERT_EQ(configs.size(), 1);
+    auto attrs = configs[0].attributes();
+    const double* channels = attrs.find("num_channels")->second.get<double>();
+    ASSERT_NE(channels, nullptr);
+    EXPECT_EQ(*channels, 2);
+}
+
+TEST_F(DiscoveryTest, OutputChannelsClampedToTwo) {
+    const std::string test_name = "8-Channel HDMI";
+    createMockDevices({{test_name, 0, 8, 48000.0}});
+
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(1));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&device_infos_[0]));
+
+    AudioDiscovery discovery(deps_, *config_, mock_pa_.get(), mock_resolver_.get());
+    auto configs = discovery.discover_resources(ProtoStruct{});
+
+    ASSERT_EQ(configs.size(), 1);
+    auto attrs = configs[0].attributes();
+    const double* channels = attrs.find("num_channels")->second.get<double>();
+    ASSERT_NE(channels, nullptr);
+    EXPECT_EQ(*channels, 2);
+}
+
+TEST_F(DiscoveryTest, MonoChannelCountNotUpclamped) {
+    // The clamp is min(channels, 2) — a 1-channel mic stays at 1.
+    const std::string test_name = "Mono USB Mic";
+    createMockDevices({{test_name, 1, 0, 44100.0}});
+
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(1));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&device_infos_[0]));
+
+    AudioDiscovery discovery(deps_, *config_, mock_pa_.get(), mock_resolver_.get());
+    auto configs = discovery.discover_resources(ProtoStruct{});
+
+    ASSERT_EQ(configs.size(), 1);
+    auto attrs = configs[0].attributes();
+    const double* channels = attrs.find("num_channels")->second.get<double>();
+    ASSERT_NE(channels, nullptr);
+    EXPECT_EQ(*channels, 1);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);
