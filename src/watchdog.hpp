@@ -16,14 +16,12 @@ namespace utils {
 
 constexpr int MAX_RESTART_ATTEMPTS = 3;
 constexpr std::chrono::milliseconds POLL_INTERVAL{200};
-constexpr uint64_t STALL_THRESHOLD_MS = 2000;
+constexpr std::chrono::milliseconds STALL_THRESHOLD{2000};
 // Once the attempts budget is exhausted, the watchdog stops attempting fast restarts and
-// instead retries every BACKOFF_INTERVAL_MS. This supports hot-replug scenarios: the
-// device may come back later (USB plug-in, driver recovery) and we want to resume
-// recovery without forcing the user to reconfigure. Each backoff retry costs the same
-// as a normal restart attempt — milliseconds — so the long interval is purely about
-// not flooding logs while waiting.
-constexpr uint64_t BACKOFF_INTERVAL_MS = 5000;
+// instead retries every BACKOFF_INTERVAL. This supports hot-replug scenarios: the device
+// may come back later (USB plug-in, driver recovery) and we want to resume recovery
+// without forcing the user to reconfigure.
+constexpr std::chrono::milliseconds BACKOFF_INTERVAL{2000};
 
 // Background watchdog that polls an audio component's `last_callback_time_ns` and
 // triggers a restart when the callback has gone silent for too long. Used by both
@@ -32,10 +30,6 @@ constexpr uint64_t BACKOFF_INTERVAL_MS = 5000;
 // ContextT is the concrete audio context type (InputStreamContext / OutputStreamContext).
 // It must expose a `std::atomic<uint64_t> last_callback_time_ns` member — both subclasses
 // inherit one from AudioBuffer.
-//
-// Lifecycle: construct → start() → (optional) stop() → destruct. start() and stop() are
-// not thread-safe; call them from the owning component only. The destructor joins the
-// poll thread.
 template <typename ContextT>
 class StallWatchdog {
    public:
@@ -58,7 +52,9 @@ class StallWatchdog {
           restart_fn_(std::move(restart_fn)),
           log_prefix_(std::move(log_prefix)) {}
 
-    ~StallWatchdog() { stop(); }
+    ~StallWatchdog() {
+        stop();
+    }
 
     // Spins up the poll thread. Call after the owning component has finished
     // constructing its first stream so the first poll sees valid state.
@@ -66,9 +62,6 @@ class StallWatchdog {
         thread_ = std::thread([this] { loop(); });
     }
 
-    // Signals stop and joins the poll thread. Safe to call multiple times.
-    // The destructor calls this automatically; explicit stop() is for callers
-    // that need to control teardown ordering.
     void stop() {
         stop_.store(true);
         if (thread_.joinable()) {
@@ -99,8 +92,8 @@ class StallWatchdog {
             if (now_ns <= last_cb) {
                 continue;
             }
-            const uint64_t stale_ms = (now_ns - last_cb) / audio::NS_PER_MS;
-            if (stale_ms <= STALL_THRESHOLD_MS) {
+            const auto stale = std::chrono::milliseconds((now_ns - last_cb) / audio::NS_PER_MS);
+            if (stale <= STALL_THRESHOLD) {
                 continue;
             }
 
@@ -109,19 +102,21 @@ class StallWatchdog {
                 // Budget exhausted — back off to slow retries instead of giving up
                 // permanently, so hot-replug (device unplugged then plugged back in)
                 // recovers automatically without a reconfigure.
-                if (now_ns - last_attempt_ns_.load() < BACKOFF_INTERVAL_MS * audio::NS_PER_MS) {
+                const auto since_last = std::chrono::milliseconds((now_ns - last_attempt_ns_.load()) / audio::NS_PER_MS);
+                if (since_last < BACKOFF_INTERVAL) {
                     if (!backoff_logged_.exchange(true)) {
-                        VIAM_SDK_LOG(warn) << log_prefix_ << " Restart budget exhausted; backing off to "
-                                           << BACKOFF_INTERVAL_MS / 1000 << "s retries until the device returns";
+                        const auto backoff_seconds = std::chrono::duration_cast<std::chrono::seconds>(BACKOFF_INTERVAL).count();
+                        VIAM_SDK_LOG(warn) << log_prefix_ << " Restart budget exhausted; backing off to " << backoff_seconds
+                                           << "s retries until the device returns";
                     }
                     continue;
                 }
-                VIAM_SDK_LOG(info) << log_prefix_ << " Backoff retry (attempts=" << attempts << "); checking for device";
+                VIAM_SDK_LOG(debug) << log_prefix_ << " Backoff retry (attempts=" << attempts << "); checking for device";
             } else {
                 // Attempts is below max — clear the backoff latch so a future exhaustion
                 // logs the "backing off" message again.
                 backoff_logged_.store(false);
-                VIAM_SDK_LOG(warn) << log_prefix_ << " Callback stale for " << stale_ms << "ms, attempting restart";
+                VIAM_SDK_LOG(warn) << log_prefix_ << " Callback stale for " << stale.count() << "ms, attempting restart";
             }
 
             last_attempt_ns_.store(now_ns);
@@ -145,7 +140,7 @@ class StallWatchdog {
     // (typically after a successful restart resets the counter).
     std::atomic<bool> backoff_logged_{false};
     // Wall-clock time of the most recent restart attempt, used to enforce the
-    // BACKOFF_INTERVAL_MS gap once the attempts budget is exhausted. Initialized to 0
+    // BACKOFF_INTERVAL gap once the attempts budget is exhausted. Initialized to 0
     // so the very first stale-detection always fires immediately.
     std::atomic<uint64_t> last_attempt_ns_{0};
 };

@@ -91,7 +91,7 @@ class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurab
 
     // Counts consecutive failed restart attempts; reset to 0 after a successful restart
     // or a reconfigure(). Once it reaches audio::utils::MAX_RESTART_ATTEMPTS, the watchdog
-    // backs off to slow retries (audio::utils::BACKOFF_INTERVAL_MS) instead of polling
+    // backs off to slow retries (audio::utils::BACKOFF_INTERVAL) instead of polling
     // every audio::utils::POLL_INTERVAL — supports hot-replug recovery without spamming
     // the kernel. The counter is capped at MAX so it doesn't grow unbounded.
     int restart_attempts_ = 0;

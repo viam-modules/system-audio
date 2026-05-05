@@ -46,7 +46,7 @@ TEST(StallWatchdog, RestartFiresWhenStale) {
 }
 
 // Once attempts hit MAX, the backoff gate prevents repeated calls within
-//    BACKOFF_INTERVAL_MS. The very first poll past MAX still fires (the watchdog needs
+//    BACKOFF_INTERVAL. The very first poll past MAX still fires (the watchdog needs
 //    that to discover when the device returns), but subsequent polls within the backoff
 //    window are skipped.
 TEST(StallWatchdog, BackoffGateLimitsRestartsWhenAttemptsExhausted) {
@@ -61,13 +61,13 @@ TEST(StallWatchdog, BackoffGateLimitsRestartsWhenAttemptsExhausted) {
     wd.start();
 
     // Wait long enough for several poll cycles (200ms each). With attempts pinned at MAX
-    // and BACKOFF_INTERVAL_MS = 5000, only the very first retry should fire — every poll
+    // and BACKOFF_INTERVAL = 5000, only the very first retry should fire — every poll
     // for the next 5 seconds should hit the backoff gate and skip.
     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     wd.stop();
 
     EXPECT_EQ(restart_calls.load(), 1)
-        << "expected exactly one backoff retry inside the BACKOFF_INTERVAL_MS window; "
+        << "expected exactly one backoff retry inside the BACKOFF_INTERVAL window; "
         << "subsequent polls should have been gated";
 }
 

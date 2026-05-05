@@ -94,16 +94,14 @@ void Speaker::restart_stalled_stream(const std::shared_ptr<audio::OutputStreamCo
         return;
     }
 
-    VIAM_SDK_LOG(warn) << "[speaker stall_watcher] Restarting stalled speaker stream";
+    VIAM_SDK_LOG(debug) << "[speaker stall_watcher] Restarting stalled speaker stream";
 
     // If device_id was configured, re-resolve before restarting in case the kernel
     // re-enumerated and the cached device_index is stale (e.g. USB unplug/replug).
-    const auto resolve_status =
-        audio::utils::resolve_device_id_into_params(device_id_, stream_params_, pa_, "[speaker stall_watcher]");
-    if (resolve_status == audio::utils::ResolveStatus::NotFound) {
-        // Device is gone. Don't bother trying to open a stream against a stale path —
-        // PortAudio would just spam ALSA errors. Bump attempts so the watchdog enters
-        // backoff; once the device returns, a backoff retry will resolve and proceed.
+    // When the device is missing, skip the actual stream open — PortAudio would just
+    // spam ALSA errors. Bump attempts so the watchdog enters backoff; once the device
+    // returns, a backoff retry will resolve and proceed.
+    if (!audio::utils::resolve_device_id_into_params(device_id_, stream_params_, pa_, "[speaker stall_watcher]")) {
         if (restart_attempts_ < audio::utils::MAX_RESTART_ATTEMPTS) {
             ++restart_attempts_;
         }
@@ -135,7 +133,6 @@ void Speaker::restart_stalled_stream(const std::shared_ptr<audio::OutputStreamCo
         }
         VIAM_SDK_LOG(error) << "[speaker stall_watcher] Failed to restart stream (attempt " << restart_attempts_ << "/"
                             << audio::utils::MAX_RESTART_ATTEMPTS << "): " << e.what();
-        // Watchdog has no caller to throw to — keep going, it'll try again next tick.
     }
 }
 
