@@ -1,16 +1,48 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <thread>
+
 #include <gmock/gmock.h>
 #include <viam/sdk/common/instance.hpp>
 #include "../src/audio_stream.hpp"
 #include "../src/device_id.hpp"
 #include "../src/portaudio.hpp"
+#include "../src/watchdog.hpp"
 #include "portaudio.h"
 
 namespace test_utils {
 
 // Common test constants
 constexpr int DEFAULT_DEVICE_SAMPLE_RATE = 44100;  // Device's native/default sample rate in tests
+
+// Steady-clock "now" expressed as nanoseconds since the clock's epoch — same idiom as
+// the production code uses for last_callback_time_ns. Useful for tests that need to
+// fabricate stale timestamps.
+inline uint64_t now_ns() {
+    return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+}
+
+// Sleeps long enough for the watchdog's poll thread to wake at least once and run its
+// staleness check + restart_fn. Use this in tests that set last_callback_time_ns to a
+// stale value and then need to assert on the watchdog's reaction.
+inline void wait_one_poll() {
+    std::this_thread::sleep_for(audio::utils::POLL_INTERVAL + std::chrono::milliseconds(150));
+}
+
+// Marks the given audio context's `last_callback_time_ns` to be `ms_ago` milliseconds
+// in the past, so the watchdog will see it as stale on its next poll. Works with any
+// type that exposes a std::atomic<uint64_t> last_callback_time_ns member — both the
+// real AudioBuffer subclasses and the FakeContext used in watchdog_test.
+template <typename Ctx>
+inline void mark_callback_stale(const std::shared_ptr<Ctx>& ctx, uint64_t ms_ago = 5000) {
+    const uint64_t now = now_ns();
+    if (ms_ago * audio::NS_PER_MS <= now) {
+        ctx->last_callback_time_ns.store(now - ms_ago * audio::NS_PER_MS);
+    }
+}
 
 // Shared test environment for audio tests
 // Manages the viam::sdk::Instance lifecycle for all tests

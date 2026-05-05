@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <viam/sdk/config/resource.hpp>
+
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include "speaker.hpp"
 #include "test_utils.hpp"
 #include "audio_codec.hpp"
@@ -1001,6 +1004,103 @@ TEST_F(SpeakerTest, PlayPCM16WithWavHeader) {
       EXPECT_EQ(samples_read, expected_resampled_samples);
   }
 
+
+// Watchdog: when the speaker callback stops firing, the background watcher should
+// detect the staleness on its next poll and replace audio_context_ with a fresh one.
+// We force the stale state by manually setting last_callback_time_ns to a timestamp
+// well past STREAM_RESTART_THRESHOLD_MS in the past, then sleep one poll cycle + slack.
+TEST_F(SpeakerTest, WatchdogRestartsStalledStream) {
+    const int sample_rate = 44100;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    // Snapshot the audio context the watcher will see initially.
+    std::shared_ptr<audio::OutputStreamContext> initial_context;
+    {
+        std::lock_guard<std::mutex> lock(speaker.stream_mu_);
+        initial_context = speaker.audio_context_;
+    }
+    ASSERT_TRUE(initial_context);
+
+    // Pretend the callback last fired 5 seconds ago — well past the 2s threshold.
+    test_utils::mark_callback_stale(initial_context);
+
+    // Wait long enough for the watchdog to wake, see the stale timestamp,
+    // and run restart_stalled_stream.
+    test_utils::wait_one_poll();
+
+    std::shared_ptr<audio::OutputStreamContext> after_context;
+    int after_attempts = -1;
+    {
+        std::lock_guard<std::mutex> lock(speaker.stream_mu_);
+        after_context = speaker.audio_context_;
+        after_attempts = speaker.restart_attempts_;
+    }
+
+    EXPECT_NE(after_context.get(), initial_context.get())
+        << "watchdog should have replaced audio_context_ after detecting stall";
+    EXPECT_EQ(after_attempts, 0)
+        << "restart should have succeeded with the mock pa returning paNoError";
+}
+
+// Watchdog: if restart_stream fails (e.g. PortAudio errors), restart_attempts_ should
+// climb instead of resetting to 0. The fresh audio_context_ is also NOT swapped in
+// because restart_stalled_stream only updates audio_context_ on success.
+TEST_F(SpeakerTest, WatchdogIncrementsAttemptsOnRestartFailure) {
+    using ::testing::_;
+    using ::testing::Return;
+
+    const int sample_rate = 44100;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    std::shared_ptr<audio::OutputStreamContext> initial_context;
+    {
+        std::lock_guard<std::mutex> lock(speaker.stream_mu_);
+        initial_context = speaker.audio_context_;
+    }
+    ASSERT_TRUE(initial_context);
+
+    // Make any future startStream call fail. The initial stream is already up;
+    // this only affects the watcher's restart attempt.
+    EXPECT_CALL(*mock_pa_, startStream(_)).WillRepeatedly(Return(paInternalError));
+
+    test_utils::mark_callback_stale(initial_context);
+
+    test_utils::wait_one_poll();
+
+    std::shared_ptr<audio::OutputStreamContext> after_context;
+    int after_attempts = -1;
+    {
+        std::lock_guard<std::mutex> lock(speaker.stream_mu_);
+        after_context = speaker.audio_context_;
+        after_attempts = speaker.restart_attempts_;
+    }
+
+    EXPECT_GE(after_attempts, 1) << "failed restart should have bumped restart_attempts_";
+    EXPECT_EQ(after_context.get(), initial_context.get())
+        << "audio_context_ should not be swapped on failed restart";
+}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);

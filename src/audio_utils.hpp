@@ -100,6 +100,49 @@ inline PaDeviceIndex findDeviceById(const std::string& id,
     return paNoDevice;
 }
 
+// Result of resolve_device_id_into_params.
+enum class ResolveStatus {
+    NotConfigured,  // `device_id` was empty — caller should proceed with cached params
+    Found,          // device_id resolved (params updated in place if the device moved)
+    NotFound,       // device_id was configured but no matching device exists on the system (might be unplugged)
+};
+
+// If `device_id` is non-empty, re-resolves it against the current PortAudio device state
+// and updates `params.device_index` / `params.device_name` in-place if the device has
+// moved (e.g. USB unplug/replug → kernel re-enumerated). Returns a ResolveStatus the
+// caller can use to decide whether the restart is worth attempting.
+inline ResolveStatus resolve_device_id_into_params(const std::string& device_id,
+                                                   StreamParams& params,
+                                                   const audio::portaudio::PortAudioInterface* pa,
+                                                   const std::string& log_prefix,
+                                                   const audio::device_id::DeviceIdResolver* resolver = nullptr) {
+    if (device_id.empty()) {
+        return ResolveStatus::NotConfigured;
+    }
+    audio::portaudio::RealPortAudio real_pa;
+    const audio::portaudio::PortAudioInterface& audio_interface = pa ? *pa : real_pa;
+    audio::device_id::RealDeviceIdResolver real_resolver;
+    const audio::device_id::DeviceIdResolver& resolver_ref = resolver ? *resolver : real_resolver;
+    const PaDeviceIndex resolved = findDeviceById(device_id, audio_interface, resolver_ref);
+    if (resolved == paNoDevice) {
+        VIAM_SDK_LOG(warn) << log_prefix << " device_id '" << device_id
+                           << "' not found on system; skipping restart";
+        return ResolveStatus::NotFound;
+    }
+    if (resolved == params.device_index) {
+        return ResolveStatus::Found;
+    }
+    const PaDeviceInfo* const new_info = audio_interface.getDeviceInfo(resolved);
+    VIAM_SDK_LOG(info) << log_prefix << " device_id '" << device_id << "' moved from index "
+                       << params.device_index << " to " << resolved << " ("
+                       << ((new_info && new_info->name) ? new_info->name : "<unnamed>") << "); updating stream params";
+    params.device_index = resolved;
+    if (new_info && new_info->name) {
+        params.device_name = new_info->name;
+    }
+    return ResolveStatus::Found;
+}
+
 inline ConfigParams parseConfigAttributes(const viam::sdk::ResourceConfig& cfg) {
     const auto attrs = cfg.attributes();
     ConfigParams params;
@@ -288,13 +331,11 @@ inline void openStream(PaStream*& stream, const StreamParams& params, const audi
     PaError err = audio_interface.isFormatSupported(inputParams, outputParams, params.sample_rate);
     if (err != paNoError) {
         std::ostringstream buffer;
-        buffer << "Audio format not supported by device '" << params.device_name << "' (index " << params.device_index
-               << "): " << Pa_GetErrorText(err) << "\n"
-               << "Requested configuration:\n"
-               << "  - Sample rate: " << params.sample_rate << " Hz\n"
-               << "  - Channels: " << params.num_channels << "\n"
-               << "  - Format: 16-bit PCM\n"
-               << "  - Latency: " << params.suggested_latency_seconds << " seconds";
+        buffer << "Could not open stream — PortAudio: " << Pa_GetErrorText(err) << " — device '"
+               << params.device_name << "' (index " << params.device_index << "). "
+               << "Requested: sample_rate=" << params.sample_rate << "Hz, "
+               << "channels=" << params.num_channels << ", format=16-bit PCM, "
+               << "latency=" << params.suggested_latency_seconds << "s";
         VIAM_SDK_LOG(error) << buffer.str();
         throw std::runtime_error(buffer.str());
     }
@@ -463,7 +504,7 @@ inline void log_callback_staleness(const std::atomic<uint64_t>& last_callback_ti
     const uint64_t last_cb = last_callback_time_ns.load();
     if (last_cb > 0) {
         const uint64_t now_ns = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-        const uint64_t elapsed_ms = (now_ns - last_cb) / 1'000'000;
+        const uint64_t elapsed_ms = (now_ns - last_cb) / audio::NS_PER_MS;
         if (elapsed_ms > STREAM_RESTART_THRESHOLD_MS && now_ns - last_log_ns > STALENESS_LOG_THROTTLE_NS) {
             last_log_ns = now_ns;
             if (!stream) {
