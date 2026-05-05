@@ -111,7 +111,7 @@ class StallWatchdog {
                     }
                     continue;
                 }
-                VIAM_SDK_LOG(debug) << log_prefix_ << " Backoff retry (attempts=" << attempts << "); checking for device";
+                VIAM_SDK_LOG(debug) << log_prefix_ << " checking for device";
             } else {
                 // Attempts is below max — clear the backoff latch so a future exhaustion
                 // logs the "backing off" message again.
