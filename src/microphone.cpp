@@ -123,7 +123,6 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
     try {
         stream_params_.user_data = new_context.get();
         audio::utils::restart_stream(stream_, stream_params_, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = new_context;
         restart_attempts_ = 0;
         VIAM_SDK_LOG(info) << "[microphone stall_watcher] Stream restarted successfully";
@@ -204,7 +203,6 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
         stream_params_.user_data = setup.audio_context.get();
         device_id_ = setup.config_params.device_id;
         audio::utils::restart_stream(stream_, stream_params_, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = setup.audio_context;
         requested_sample_rate_ =
             setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
@@ -351,7 +349,6 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
             stream_params_.user_data = setup.audio_context.get();
             device_id_ = setup.config_params.device_id;
             audio::utils::restart_stream(stream_, stream_params_, pa_);
-            latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
             restart_attempts_ = 0;
             requested_sample_rate_ = setup.config_params.sample_rate.value_or(

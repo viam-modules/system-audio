@@ -27,8 +27,6 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, au
     // Set new configuration and start stream under lock
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
-        sample_rate_ = setup.stream_params.sample_rate;
-        num_channels_ = setup.stream_params.num_channels;
         audio_context_ = setup.audio_context;
         setup.stream_params.user_data = setup.audio_context.get();
         stream_params_ = setup.stream_params;
@@ -377,8 +375,8 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
-        speaker_sample_rate = sample_rate_;
-        speaker_num_channels = num_channels_;
+        speaker_sample_rate = stream_params_.sample_rate;
+        speaker_num_channels = stream_params_.num_channels;
     }
 
     // Convert channel count if needed (e.g. mono → stereo or stereo → mono)
@@ -480,7 +478,12 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     }
 
     // Wait for audio pipeline to drain
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(latency_ * 1000)));
+    double drain_latency;
+    {
+        std::lock_guard<std::mutex> lock(stream_mu_);
+        drain_latency = latency_;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(drain_latency * 1000)));
 
     VIAM_SDK_LOG(debug) << "Audio playback complete";
 }
@@ -491,8 +494,8 @@ viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& ext
     props.supported_codecs = {
         vsdk::audio_codecs::PCM_16, vsdk::audio_codecs::PCM_32, vsdk::audio_codecs::PCM_32_FLOAT, vsdk::audio_codecs::MP3};
     std::lock_guard<std::mutex> lock(stream_mu_);
-    props.sample_rate_hz = sample_rate_;
-    props.num_channels = num_channels_;
+    props.sample_rate_hz = stream_params_.sample_rate;
+    props.num_channels = stream_params_.num_channels;
 
     return props;
 }
@@ -534,8 +537,6 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             setup.stream_params.user_data = setup.audio_context.get();
             stream_params_ = setup.stream_params;
             audio::utils::restart_stream(stream_, stream_params_, pa_);
-            sample_rate_ = setup.stream_params.sample_rate;
-            num_channels_ = setup.stream_params.num_channels;
             latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
             device_id_ = setup.config_params.device_id;

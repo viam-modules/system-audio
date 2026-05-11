@@ -61,8 +61,6 @@ class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurab
 
     // Member variables
     double latency_;
-    int sample_rate_;
-    int num_channels_;
     std::optional<int> volume_;
     static vsdk::Model model;
 
