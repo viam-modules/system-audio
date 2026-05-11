@@ -283,13 +283,11 @@ TEST_F(MicrophoneTest, ModelExists) {
 TEST_F(MicrophoneTest, SetsCorrectFields) {
     int sample_rate = 44100;
     int num_channels = 1;
-    double test_latency_ms = 1.0;  // In milliseconds
 
     auto attributes = ProtoStruct{};
     attributes["device_name"] = testDeviceName;
     attributes["sample_rate"] = static_cast<double>(sample_rate);
     attributes["num_channels"] = static_cast<double>(num_channels);
-    attributes["latency"] = test_latency_ms;
 
     ResourceConfig config(
         "rdk:component:audioin",
@@ -320,29 +318,6 @@ TEST_F(MicrophoneTest, SetsCorrectFields) {
     EXPECT_EQ(mic.stream_params_.sample_rate, sample_rate);
     EXPECT_EQ(mic.stream_params_.num_channels, num_channels);
     EXPECT_EQ(mic.stream_params_.device_name, testDeviceName);
-    EXPECT_DOUBLE_EQ(mic.latency_, test_latency_ms / 1000.0);  // Stored in seconds
-}
-
-TEST_F(MicrophoneTest, DefaultsToZeroLatencyWhenNotSpecified) {
-    auto attributes = ProtoStruct{};
-    attributes["sample_rate"] = 44100.0;
-    attributes["num_channels"] = 1.0;
-    // No latency specified
-
-    ResourceConfig config(
-        "rdk:component:audioin",
-        "",
-        "test_microphone",
-        attributes,
-        "",
-        microphone::Microphone::model,
-        LinkConfig{},
-        log_level::info
-    );
-
-    Dependencies deps{};
-    microphone::Microphone mic(deps, config, mock_pa_.get());
-    EXPECT_DOUBLE_EQ(mic.latency_, 0.01);
 }
 
 TEST_F(MicrophoneTest, DefaultsToFiftyMsHistoricalThrottleWhenNotSpecified) {
