@@ -68,7 +68,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
                              int& device_samples_per_chunk);
 
     // Member variables
-    int requested_sample_rate_;  // User's requested sample rate (may differ from device rate)
+    int requested_sample_rate_;   // User's requested sample rate (may differ from device rate)
     int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;
 
