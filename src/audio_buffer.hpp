@@ -14,6 +14,9 @@ namespace vsdk = ::viam::sdk;
 
 constexpr int BUFFER_DURATION_SECONDS = 30;  // How much audio history to keep in buffer
 
+// Unit-conversion constant: nanoseconds per millisecond.
+constexpr uint64_t NS_PER_MS = 1'000'000;
+
 // Base class for audio buffering - lock-free circular buffer with atomic operations
 // Can be used by both input (microphone) and output (speaker) models.
 // There is a 1:1 correspondence between AudioBuffer and viam audio resource

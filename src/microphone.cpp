@@ -94,13 +94,25 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
         return;
     }
 
-    VIAM_SDK_LOG(warn) << "[get_audio] Restarting stalled stream (attempt " << restart_attempts_ + 1 << "/" << MAX_STREAM_RESTART_ATTEMPTS
-                       << ")";
+    VIAM_SDK_LOG(debug) << "[microphone stall_watcher] Restarting stalled stream";
+
+    // If device_id was configured, re-resolve before restarting in case the kernel
+    // re-enumerated and the cached device_index is stale (e.g. USB unplug/replug).
+    // When the device is missing, skip the actual stream open — PortAudio would just
+    // spam ALSA errors. Bump attempts so the watchdog enters backoff; once the device
+    // returns, a backoff retry will resolve and proceed.
+    if (!audio::utils::resolve_device_id_into_params(device_id_, stream_params_, pa_, "[microphone stall_watcher]")) {
+        if (restart_attempts_ < audio::utils::MAX_RESTART_ATTEMPTS) {
+            ++restart_attempts_;
+        }
+        return;
+    }
+
     if (stream_) {
         try {
             audio::utils::abort_stream(stream_, pa_);
         } catch (const std::exception& e) {
-            VIAM_SDK_LOG(error) << "[get_audio] Error shutting down stalled stream: " << e.what();
+            VIAM_SDK_LOG(error) << "[microphone stall_watcher] Error shutting down stalled stream: " << e.what();
         }
         stream_ = nullptr;
     }
@@ -111,19 +123,15 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
     try {
         stream_params_.user_data = new_context.get();
         audio::utils::restart_stream(stream_, stream_params_, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = new_context;
         restart_attempts_ = 0;
-        VIAM_SDK_LOG(info) << "[get_audio] Stream restarted successfully";
+        VIAM_SDK_LOG(info) << "[microphone stall_watcher] Stream restarted successfully";
     } catch (const std::exception& e) {
-        ++restart_attempts_;
-        if (restart_attempts_ >= MAX_STREAM_RESTART_ATTEMPTS) {
-            VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream after " << MAX_STREAM_RESTART_ATTEMPTS
-                                << " attempts, giving up: " << e.what();
-            throw;
+        if (restart_attempts_ < audio::utils::MAX_RESTART_ATTEMPTS) {
+            ++restart_attempts_;
         }
-        VIAM_SDK_LOG(error) << "[get_audio] Failed to restart stream (attempt " << restart_attempts_ << "/" << MAX_STREAM_RESTART_ATTEMPTS
-                            << "): " << e.what();
+        VIAM_SDK_LOG(error) << "[microphone stall_watcher] Failed to restart stream (attempt " << restart_attempts_ << "/"
+                            << audio::utils::MAX_RESTART_ATTEMPTS << "): " << e.what();
     }
 }
 
@@ -193,17 +201,35 @@ Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig c
         std::lock_guard<std::mutex> lock(stream_ctx_mu_);
         stream_params_ = setup.stream_params;
         stream_params_.user_data = setup.audio_context.get();
+        device_id_ = setup.config_params.device_id;
         audio::utils::restart_stream(stream_, stream_params_, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         audio_context_ = setup.audio_context;
         requested_sample_rate_ =
             setup.config_params.sample_rate.value_or(setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
         historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
     }
+
+    watchdog_ = std::make_unique<audio::utils::StallWatchdog<audio::InputStreamContext>>(
+        [this]() {
+            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+            return audio_context_;
+        },
+        [this]() {
+            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
+            return restart_attempts_;
+        },
+        [this](const std::shared_ptr<audio::InputStreamContext>& ctx) { restart_stalled_stream(ctx); },
+        "[microphone stall_watcher]");
+    watchdog_->start();
 }
 
 Microphone::~Microphone() {
     VIAM_SDK_LOG(debug) << "[Microphone::~Microphone] Destructor called";
+    // Stop and join the watchdog before tearing down the stream so it can't touch a
+    // half-destroyed audio_context_.
+    if (watchdog_) {
+        watchdog_->stop();
+    }
     if (stream_) {
         PaError err = Pa_StopStream(stream_);
         if (err != paNoError) {
@@ -321,9 +347,10 @@ void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sd
 
             stream_params_ = setup.stream_params;
             stream_params_.user_data = setup.audio_context.get();
+            device_id_ = setup.config_params.device_id;
             audio::utils::restart_stream(stream_, stream_params_, pa_);
-            latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
+            restart_attempts_ = 0;
             requested_sample_rate_ = setup.config_params.sample_rate.value_or(
                 setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
             historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
@@ -444,19 +471,6 @@ void Microphone::get_audio(std::string const& codec,
 
         // Wait until we have a full chunk worth of samples
         if (available_samples < device_samples_per_chunk) {
-            audio::utils::log_callback_staleness(
-                stream_context->last_callback_time_ns, "[get_audio]", current_stream, last_staleness_log_ns);
-
-            const uint64_t last_cb = stream_context->last_callback_time_ns.load();
-            if (last_cb > 0) {
-                const uint64_t now_ns = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-                const uint64_t stale_ms = (now_ns - last_cb) / 1'000'000;
-                if (stale_ms > audio::utils::STREAM_RESTART_THRESHOLD_MS) {
-                    VIAM_SDK_LOG(warn) << "[get_audio] Stream stalled for " << stale_ms << "ms, attempting restart";
-                    restart_stalled_stream(stream_context);
-                }
-            }
-
             const uint64_t overflow_count = stream_context->input_overflow_count.load();
             if (overflow_count != last_logged_overflow_count) {
                 VIAM_SDK_LOG(warn) << "[get_audio] Input overflow detected — " << (overflow_count - last_logged_overflow_count)

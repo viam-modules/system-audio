@@ -466,6 +466,108 @@ TEST_F(AudioUtilsTest, AbortStream_ThrowsOnCloseFailure) {
     EXPECT_THROW(audio::utils::abort_stream(nullptr, mock_pa_.get()), std::runtime_error);
 }
 
+// --- resolve_device_id_into_params -------------------------------------------------
+
+// File-scope helpers shared by the four resolver tests below.
+namespace {
+
+audio::utils::StreamParams params_at(PaDeviceIndex idx, const std::string& name) {
+    audio::utils::StreamParams p{};
+    p.device_index = idx;
+    p.device_name = name;
+    return p;
+}
+
+PaDeviceInfo make_device_info(const char* name) {
+    PaDeviceInfo info{};
+    info.name = name;
+    return info;
+}
+
+// Build a fresh resolver mock and pre-load the "no match by default" behavior the
+// resolver tests all want. Returns the unique_ptr so the caller controls lifetime.
+std::unique_ptr<::testing::NiceMock<test_utils::MockDeviceIdResolver>> make_resolver_mock() {
+    auto resolver = std::make_unique<::testing::NiceMock<test_utils::MockDeviceIdResolver>>();
+    ON_CALL(*resolver, resolve(::testing::_, ::testing::_))
+        .WillByDefault(::testing::Return(std::string{}));
+    return resolver;
+}
+
+}  // namespace
+
+TEST_F(AudioUtilsTest, ResolveDeviceId_EmptyDeviceIdIsNoOp) {
+    auto resolver = make_resolver_mock();
+    auto params = params_at(7, "old name");
+    const bool proceed =
+        audio::utils::resolve_device_id_into_params(/*device_id=*/"", params, mock_pa_.get(), "[test]", resolver.get());
+    EXPECT_TRUE(proceed) << "empty device_id should proceed with cached params";
+    EXPECT_EQ(params.device_index, 7);
+    EXPECT_EQ(params.device_name, "old name");
+}
+
+TEST_F(AudioUtilsTest, ResolveDeviceId_NotFoundLeavesParamsUnchanged) {
+    using ::testing::Return;
+    using ::testing::_;
+
+    auto resolver = make_resolver_mock();
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(2));
+    PaDeviceInfo a = make_device_info("device a");
+    PaDeviceInfo b = make_device_info("device b");
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&a));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(1)).WillRepeatedly(Return(&b));
+    // Resolver default returns "" for every device, so "looking-for-id" never matches.
+
+    auto params = params_at(0, "device a");
+    const bool proceed =
+        audio::utils::resolve_device_id_into_params("looking-for-id", params, mock_pa_.get(), "[test]", resolver.get());
+    EXPECT_FALSE(proceed) << "missing device should signal skip";
+    EXPECT_EQ(params.device_index, 0);
+    EXPECT_EQ(params.device_name, "device a");
+}
+
+TEST_F(AudioUtilsTest, ResolveDeviceId_AtSameIndexIsNoOp) {
+    using ::testing::Return;
+    using ::testing::_;
+
+    auto resolver = make_resolver_mock();
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(2));
+    PaDeviceInfo a = make_device_info("device a");
+    PaDeviceInfo b = make_device_info("device b");
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&a));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(1)).WillRepeatedly(Return(&b));
+
+    // Resolver: index 0 holds "stable-id"; others stay empty (default).
+    EXPECT_CALL(*resolver, resolve(0, _)).WillRepeatedly(Return(std::string{"stable-id"}));
+
+    auto params = params_at(0, "device a");
+    const bool proceed =
+        audio::utils::resolve_device_id_into_params("stable-id", params, mock_pa_.get(), "[test]", resolver.get());
+    EXPECT_TRUE(proceed) << "device found at the cached index should proceed";
+    EXPECT_EQ(params.device_index, 0);
+    EXPECT_EQ(params.device_name, "device a");
+}
+
+TEST_F(AudioUtilsTest, ResolveDeviceId_MovedUpdatesParams) {
+    using ::testing::Return;
+    using ::testing::_;
+
+    auto resolver = make_resolver_mock();
+    EXPECT_CALL(*mock_pa_, getDeviceCount()).WillRepeatedly(Return(2));
+    PaDeviceInfo a = make_device_info("device a");
+    PaDeviceInfo b = make_device_info("device b new path");
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(0)).WillRepeatedly(Return(&a));
+    EXPECT_CALL(*mock_pa_, getDeviceInfo(1)).WillRepeatedly(Return(&b));
+
+    ON_CALL(*resolver, resolve(1, _)).WillByDefault(Return(std::string{"moving-id"}));
+
+    auto params = params_at(0, "device a");
+    const bool proceed =
+        audio::utils::resolve_device_id_into_params("moving-id", params, mock_pa_.get(), "[test]", resolver.get());
+    EXPECT_TRUE(proceed) << "device found at a new index should proceed";
+    EXPECT_EQ(params.device_index, 1);
+    EXPECT_EQ(params.device_name, "device b new path");
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   ::testing::AddGlobalTestEnvironment(new test_utils::AudioTestEnvironment);

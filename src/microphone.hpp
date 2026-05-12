@@ -15,12 +15,12 @@
 #include "audio_utils.hpp"
 #include "portaudio.h"
 #include "portaudio.hpp"
+#include "watchdog.hpp"
 
 namespace microphone {
 namespace vsdk = ::viam::sdk;
 
 constexpr double DEFAULT_HISTORICAL_THROTTLE_MS = 50;
-constexpr int MAX_STREAM_RESTART_ATTEMPTS = 3;
 PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::PortAudioInterface& pa);
 
 // Calculates the initial read position from a previous timestamp
@@ -68,8 +68,7 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
                              int& device_samples_per_chunk);
 
     // Member variables
-    int requested_sample_rate_;  // User's requested sample rate (may differ from device rate)
-    double latency_;
+    int requested_sample_rate_;   // User's requested sample rate (may differ from device rate)
     int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;
 
@@ -84,6 +83,15 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     int restart_attempts_;
 
     audio::utils::StreamParams stream_params_;
+
+    // Device id from the resource config (empty if user configured by device_name or
+    // system default). Used by restart_stalled_stream to re-resolve the device's current
+    // PortAudio index, so we recover from kernel re-enumeration (e.g. USB unplug/replug).
+    std::string device_id_;
+
+    // Background watchdog that polls audio_context_->last_callback_time_ns and triggers
+    // restart_stalled_stream when the mic callback has gone silent for too long.
+    std::unique_ptr<audio::utils::StallWatchdog<audio::InputStreamContext>> watchdog_;
 };
 
 /**

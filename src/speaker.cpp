@@ -27,21 +27,39 @@ Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, au
     // Set new configuration and start stream under lock
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
-        device_name_ = setup.stream_params.device_name;
-        sample_rate_ = setup.stream_params.sample_rate;
-        num_channels_ = setup.stream_params.num_channels;
         audio_context_ = setup.audio_context;
         setup.stream_params.user_data = setup.audio_context.get();
-        audio::utils::restart_stream(stream_, setup.stream_params, pa_);
-        latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
+        stream_params_ = setup.stream_params;
+        device_id_ = setup.config_params.device_id;
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
         volume_ = setup.config_params.volume;
         if (volume_) {
-            audio::volume::set_volume(device_name_, *volume_);
+            audio::volume::set_volume(stream_params_.device_name, *volume_);
         }
     }
+
+    watchdog_ = std::make_unique<audio::utils::StallWatchdog<audio::OutputStreamContext>>(
+        [this]() {
+            std::lock_guard<std::mutex> lock(stream_mu_);
+            return audio_context_;
+        },
+        [this]() {
+            std::lock_guard<std::mutex> lock(stream_mu_);
+            return restart_attempts_;
+        },
+        [this](const std::shared_ptr<audio::OutputStreamContext>& ctx) { restart_stalled_stream(ctx); },
+        "[speaker stall_watcher]");
+    watchdog_->start();
 }
 
 Speaker::~Speaker() {
+    // Stop and join the watchdog before tearing down the stream so it can't touch a
+    // half-destroyed audio_context_.
+    if (watchdog_) {
+        watchdog_->stop();
+    }
+
     if (stream_) {
         PaError err = Pa_StopStream(stream_);
         if (err != paNoError) {
@@ -56,6 +74,65 @@ Speaker::~Speaker() {
 }
 
 vsdk::Model Speaker::model = {"viam", "system-audio", "speaker"};
+
+/**
+ * Tear down the existing stream and bring up a fresh one with the saved params.
+ *
+ * Bails out if `playback_context` is no longer the active audio_context_ — that means
+ * either reconfigure() or another stall recovery already replaced it, so the in-flight
+ * play() call (if any) is about to exit on its own and we shouldn't race.
+ *
+ * On a successful restart, any unplayed audio in the old buffer is discarded — same
+ * behavior as reconfigure(). The in-flight play() loop will see audio_context_ change
+ * and return early.
+ */
+void Speaker::restart_stalled_stream(const std::shared_ptr<audio::OutputStreamContext>& playback_context) {
+    std::lock_guard<std::mutex> lock(stream_mu_);
+    if (playback_context != audio_context_) {
+        return;
+    }
+
+    VIAM_SDK_LOG(debug) << "[speaker stall_watcher] Restarting stalled speaker stream";
+
+    // If device_id was configured, re-resolve before restarting in case the kernel
+    // re-enumerated and the cached device_index is stale (e.g. USB unplug/replug).
+    // When the device is missing, skip the actual stream open — PortAudio would just
+    // spam ALSA errors. Bump attempts so the watchdog enters backoff; once the device
+    // returns, a backoff retry will resolve and proceed.
+    if (!audio::utils::resolve_device_id_into_params(device_id_, stream_params_, pa_, "[speaker stall_watcher]")) {
+        if (restart_attempts_ < audio::utils::MAX_RESTART_ATTEMPTS) {
+            ++restart_attempts_;
+        }
+        return;
+    }
+
+    if (stream_) {
+        try {
+            audio::utils::abort_stream(stream_, pa_);
+        } catch (const std::exception& e) {
+            VIAM_SDK_LOG(error) << "[speaker stall_watcher] Error shutting down stalled stream: " << e.what();
+        }
+        stream_ = nullptr;
+    }
+
+    const viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, stream_params_.sample_rate, stream_params_.num_channels};
+    const auto new_context = std::make_shared<audio::OutputStreamContext>(info, audio::BUFFER_DURATION_SECONDS);
+
+    try {
+        stream_params_.user_data = new_context.get();
+        audio::utils::restart_stream(stream_, stream_params_, pa_);
+        latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
+        audio_context_ = new_context;
+        restart_attempts_ = 0;
+        VIAM_SDK_LOG(info) << "[speaker stall_watcher] Speaker stream restarted successfully";
+    } catch (const std::exception& e) {
+        if (restart_attempts_ < audio::utils::MAX_RESTART_ATTEMPTS) {
+            ++restart_attempts_;
+        }
+        VIAM_SDK_LOG(error) << "[speaker stall_watcher] Failed to restart stream (attempt " << restart_attempts_ << "/"
+                            << audio::utils::MAX_RESTART_ATTEMPTS << "): " << e.what();
+    }
+}
 
 /**
  * PortAudio callback function - runs on real-time audio thread.
@@ -182,7 +259,7 @@ viam::sdk::ProtoStruct Speaker::do_command(const viam::sdk::ProtoStruct& command
         }
 
         std::lock_guard<std::mutex> lock(stream_mu_);
-        audio::volume::set_volume(device_name_, vol);
+        audio::volume::set_volume(stream_params_.device_name, vol);
         volume_ = vol;
 
         return viam::sdk::ProtoStruct{{"volume", static_cast<double>(vol)}};
@@ -298,8 +375,8 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
 
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
-        speaker_sample_rate = sample_rate_;
-        speaker_num_channels = num_channels_;
+        speaker_sample_rate = stream_params_.sample_rate;
+        speaker_num_channels = stream_params_.num_channels;
     }
 
     // Convert channel count if needed (e.g. mono → stereo or stereo → mono)
@@ -401,7 +478,12 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     }
 
     // Wait for audio pipeline to drain
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(latency_ * 1000)));
+    double drain_latency;
+    {
+        std::lock_guard<std::mutex> lock(stream_mu_);
+        drain_latency = latency_;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(drain_latency * 1000)));
 
     VIAM_SDK_LOG(debug) << "Audio playback complete";
 }
@@ -412,8 +494,8 @@ viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& ext
     props.supported_codecs = {
         vsdk::audio_codecs::PCM_16, vsdk::audio_codecs::PCM_32, vsdk::audio_codecs::PCM_32_FLOAT, vsdk::audio_codecs::MP3};
     std::lock_guard<std::mutex> lock(stream_mu_);
-    props.sample_rate_hz = sample_rate_;
-    props.num_channels = num_channels_;
+    props.sample_rate_hz = stream_params_.sample_rate;
+    props.num_channels = stream_params_.num_channels;
 
     return props;
 }
@@ -453,15 +535,15 @@ void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceCo
             // Otherwise the callback thread may still be accessing the old context
             // after we destroy it (heap-use-after-free)
             setup.stream_params.user_data = setup.audio_context.get();
-            audio::utils::restart_stream(stream_, setup.stream_params, pa_);
-            device_name_ = setup.stream_params.device_name;
-            sample_rate_ = setup.stream_params.sample_rate;
-            num_channels_ = setup.stream_params.num_channels;
-            latency_ = audio::utils::get_stream_latency(stream_, setup.stream_params, pa_);
+            stream_params_ = setup.stream_params;
+            audio::utils::restart_stream(stream_, stream_params_, pa_);
+            latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
             audio_context_ = setup.audio_context;
+            device_id_ = setup.config_params.device_id;
+            restart_attempts_ = 0;
             volume_ = setup.config_params.volume;
             if (volume_) {
-                audio::volume::set_volume(device_name_, *volume_);
+                audio::volume::set_volume(stream_params_.device_name, *volume_);
             }
         }
         VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";

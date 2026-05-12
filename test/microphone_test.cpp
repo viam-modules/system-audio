@@ -283,13 +283,11 @@ TEST_F(MicrophoneTest, ModelExists) {
 TEST_F(MicrophoneTest, SetsCorrectFields) {
     int sample_rate = 44100;
     int num_channels = 1;
-    double test_latency_ms = 1.0;  // In milliseconds
 
     auto attributes = ProtoStruct{};
     attributes["device_name"] = testDeviceName;
     attributes["sample_rate"] = static_cast<double>(sample_rate);
     attributes["num_channels"] = static_cast<double>(num_channels);
-    attributes["latency"] = test_latency_ms;
 
     ResourceConfig config(
         "rdk:component:audioin",
@@ -320,29 +318,6 @@ TEST_F(MicrophoneTest, SetsCorrectFields) {
     EXPECT_EQ(mic.stream_params_.sample_rate, sample_rate);
     EXPECT_EQ(mic.stream_params_.num_channels, num_channels);
     EXPECT_EQ(mic.stream_params_.device_name, testDeviceName);
-    EXPECT_DOUBLE_EQ(mic.latency_, test_latency_ms / 1000.0);  // Stored in seconds
-}
-
-TEST_F(MicrophoneTest, DefaultsToZeroLatencyWhenNotSpecified) {
-    auto attributes = ProtoStruct{};
-    attributes["sample_rate"] = 44100.0;
-    attributes["num_channels"] = 1.0;
-    // No latency specified
-
-    ResourceConfig config(
-        "rdk:component:audioin",
-        "",
-        "test_microphone",
-        attributes,
-        "",
-        microphone::Microphone::model,
-        LinkConfig{},
-        log_level::info
-    );
-
-    Dependencies deps{};
-    microphone::Microphone mic(deps, config, mock_pa_.get());
-    EXPECT_DOUBLE_EQ(mic.latency_, 0.01);
 }
 
 TEST_F(MicrophoneTest, DefaultsToFiftyMsHistoricalThrottleWhenNotSpecified) {
@@ -1342,7 +1317,8 @@ TEST_F(MicrophoneTest, RestartStalledStream_IncrementsAttemptsOnFailure) {
     EXPECT_EQ(mic.audio_context_, original_context);  // unchanged on failure
 }
 
-TEST_F(MicrophoneTest, RestartStalledStream_ThrowsAfterThreeFailures) {
+
+TEST_F(MicrophoneTest, RestartStalledStream_DoesNotThrowAfterMaxAttempts) {
     auto config = createConfig();
     microphone::Microphone mic(test_deps_, config, mock_pa_.get());
 
@@ -1357,7 +1333,12 @@ TEST_F(MicrophoneTest, RestartStalledStream_ThrowsAfterThreeFailures) {
     EXPECT_NO_THROW(mic.restart_stalled_stream(original_context));  // attempt 2
     EXPECT_EQ(mic.restart_attempts_, 2);
 
-    EXPECT_THROW(mic.restart_stalled_stream(original_context), std::runtime_error);  // attempt 3
+    EXPECT_NO_THROW(mic.restart_stalled_stream(original_context));  // attempt 3 (hits MAX)
+    EXPECT_EQ(mic.restart_attempts_, audio::utils::MAX_RESTART_ATTEMPTS);
+
+    // Subsequent failures should also not throw and the counter must stay capped.
+    EXPECT_NO_THROW(mic.restart_stalled_stream(original_context));
+    EXPECT_EQ(mic.restart_attempts_, audio::utils::MAX_RESTART_ATTEMPTS);
 }
 
 TEST_F(MicrophoneTest, RestartStalledStream_ResetsAttemptsOnSuccess) {
@@ -1474,6 +1455,81 @@ class AudioCallbackTest : public ::testing::Test {
       EXPECT_EQ(result, paContinue);
       EXPECT_EQ(ctx->get_write_position(), 0);
   }
+
+// Watchdog: when the microphone callback stops firing, the background watcher should
+// detect the staleness on its next poll and replace audio_context_ with a fresh one.
+TEST_F(MicrophoneTest, WatchdogRestartsStalledStream) {
+    auto config = createConfig(testDeviceName, 44100, 1);
+    Dependencies deps{};
+    microphone::Microphone mic(deps, config, mock_pa_.get());
+
+    // Snapshot the audio context the watcher will see initially.
+    std::shared_ptr<audio::InputStreamContext> initial_context;
+    {
+        std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
+        initial_context = mic.audio_context_;
+    }
+    ASSERT_TRUE(initial_context);
+
+    // Pretend the callback last fired 5 seconds ago — well past the 2s threshold.
+    test_utils::mark_callback_stale(initial_context);
+
+    // Wait long enough for the watchdog to wake, see the stale timestamp,
+    // and run restart_stalled_stream.
+    test_utils::wait_one_poll();
+
+    std::shared_ptr<audio::InputStreamContext> after_context;
+    int after_attempts = -1;
+    {
+        std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
+        after_context = mic.audio_context_;
+        after_attempts = mic.restart_attempts_;
+    }
+
+    EXPECT_NE(after_context.get(), initial_context.get())
+        << "watchdog should have replaced audio_context_ after detecting stall";
+    EXPECT_EQ(after_attempts, 0)
+        << "restart should have succeeded with the mock pa returning paNoError";
+}
+
+// Watchdog: if restart_stream fails (e.g. PortAudio errors), restart_attempts_ should
+// climb instead of resetting to 0. The audio_context_ is also NOT swapped because
+// restart_stalled_stream only updates it on success.
+TEST_F(MicrophoneTest, WatchdogIncrementsAttemptsOnRestartFailure) {
+    using ::testing::_;
+    using ::testing::Return;
+
+    auto config = createConfig(testDeviceName, 44100, 1);
+    Dependencies deps{};
+    microphone::Microphone mic(deps, config, mock_pa_.get());
+
+    std::shared_ptr<audio::InputStreamContext> initial_context;
+    {
+        std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
+        initial_context = mic.audio_context_;
+    }
+    ASSERT_TRUE(initial_context);
+
+    // Make any future startStream call fail. The initial stream is already up;
+    // this only affects the watcher's restart attempt.
+    EXPECT_CALL(*mock_pa_, startStream(_)).WillRepeatedly(Return(paInternalError));
+
+    test_utils::mark_callback_stale(initial_context);
+
+    test_utils::wait_one_poll();
+
+    std::shared_ptr<audio::InputStreamContext> after_context;
+    int after_attempts = -1;
+    {
+        std::lock_guard<std::mutex> lock(mic.stream_ctx_mu_);
+        after_context = mic.audio_context_;
+        after_attempts = mic.restart_attempts_;
+    }
+
+    EXPECT_GE(after_attempts, 1) << "failed restart should have bumped restart_attempts_";
+    EXPECT_EQ(after_context.get(), initial_context.get())
+        << "audio_context_ should not be swapped on failed restart";
+}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
