@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <vector>
 #include <viam/sdk/config/resource.hpp>
-#include <viam/sdk/resource/reconfigurable.hpp>
 #include "audio_utils.hpp"
 
 namespace microphone {
