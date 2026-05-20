@@ -20,7 +20,7 @@ constexpr std::chrono::milliseconds STALL_THRESHOLD{2000};
 // Once the attempts budget is exhausted, the watchdog stops attempting fast restarts and
 // instead retries every BACKOFF_INTERVAL. This supports hot-replug scenarios: the device
 // may come back later (USB plug-in, driver recovery) and we want to resume recovery
-// without forcing the user to reconfigure.
+// without requiring a config change.
 constexpr std::chrono::milliseconds BACKOFF_INTERVAL{2000};
 
 // Background watchdog that polls an audio component's `last_callback_time_ns` and
@@ -38,12 +38,12 @@ class StallWatchdog {
 
     // Returns the current consecutive-failed-restart count. Watchdog stops calling
     // restart_fn once this reaches MAX_RESTART_ATTEMPTS; the latch clears automatically
-    // once the count drops back below max (e.g. after a reconfigure).
+    // once the count drops back below max (e.g. after a successful restart).
     using GetAttemptsFn = std::function<int()>;
 
     // Performs the restart. Argument is the same context get_context returned a moment
-    // earlier — the component should bail if it has since been swapped (reconfigure /
-    // peer restart).
+    // earlier — the component should bail if it has since been swapped by a prior
+    // restart.
     using RestartFn = std::function<void(const std::shared_ptr<ContextT>&)>;
 
     StallWatchdog(GetContextFn get_context, GetAttemptsFn get_attempts, RestartFn restart_fn, std::string log_prefix)
@@ -101,7 +101,7 @@ class StallWatchdog {
             if (attempts >= MAX_RESTART_ATTEMPTS) {
                 // Budget exhausted — back off to slow retries instead of giving up
                 // permanently, so hot-replug (device unplugged then plugged back in)
-                // recovers automatically without a reconfigure.
+                // recovers automatically without requiring a config change.
                 const auto since_last = std::chrono::milliseconds((now_ns - last_attempt_ns_.load()) / audio::NS_PER_MS);
                 if (since_last < BACKOFF_INTERVAL) {
                     if (!backoff_logged_.exchange(true)) {
