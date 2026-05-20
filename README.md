@@ -129,6 +129,10 @@ All audio data uses **little-endian** byte order. The specific format depends on
 - **Microphone (`get_audio`)**: Returns audio data in interleaved format
 - **Speaker (`play`)**: Expects audio data in interleaved format
 
+## Reconfigure Behavior
+
+Any config change terminates in-flight streams. Callers must handle the error
+and resubmit the request to resume.
 
 ## Setup
 ```bash
