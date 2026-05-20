@@ -68,23 +68,6 @@ static int calculate_chunk_size(const audio::codec::AudioCodec codec,
     }
 }
 
-// RAII guard to automatically increment and decrement the stream counter
-// during get_audio calls
-class StreamGuard {
-    std::mutex& mutex_;
-    int& counter_;
-
-   public:
-    StreamGuard(std::mutex& m, int& c) : mutex_(m), counter_(c) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        counter_++;
-    }
-    ~StreamGuard() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        counter_--;
-    }
-};
-
 // === Microphone Class Implementation ===
 
 void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStreamContext>& stream_context) {
@@ -137,7 +120,6 @@ void Microphone::restart_stalled_stream(const std::shared_ptr<audio::InputStream
 
 void Microphone::setup_stream_params(AudioCodec codec_enum,
                                      MP3EncoderContext& mp3_ctx,
-                                     bool is_reconfigure,
                                      int& stream_sample_rate,
                                      int& requested_sample_rate,
                                      int& stream_num_channels,
@@ -153,11 +135,7 @@ void Microphone::setup_stream_params(AudioCodec codec_enum,
         stream_historical_throttle_ms = historical_throttle_ms_;
     }
 
-    // Initialize or reinitialize MP3 encoder if needed
     if (codec_enum == AudioCodec::MP3) {
-        if (is_reconfigure) {
-            cleanup_mp3_encoder(mp3_ctx);
-        }
         initialize_mp3_encoder(mp3_ctx, requested_sample_rate, stream_num_channels);
     }
 
@@ -182,7 +160,7 @@ void Microphone::setup_stream_params(AudioCodec codec_enum,
 }
 
 Microphone::Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
-    : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), active_streams_(0), restart_attempts_(0) {
+    : viam::sdk::AudioIn(cfg.name()), stream_(nullptr), pa_(pa), restart_attempts_(0) {
 #ifdef __APPLE__
     if (geteuid() == 0) {
         std::ostringstream error_msg;
@@ -311,57 +289,6 @@ std::vector<std::string> Microphone::validate(viam::sdk::ResourceConfig cfg) {
     return {};
 }
 
-void Microphone::reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg) {
-    VIAM_SDK_LOG(info) << "[reconfigure] Microphone reconfigure start";
-
-    try {
-        // Warn if reconfiguring with active streams
-        // Changing the sample rate or number of channels mid stream
-        // might cause issues client side, clients need to be actively
-        // checking the audioinfo for changes. Changing these parameters
-        // may also cause a small gap in audio.
-        {
-            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-            if (active_streams_ > 0) {
-                VIAM_SDK_LOG(info) << "[reconfigure] Reconfiguring with " << active_streams_
-                                   << " active stream(s). See README for reconfiguration considerations.";
-            }
-        }
-
-        // Close the existing stream before setting up audio device — Pa_IsFormatSupported internally tries to
-        // open the device, which fails if it's already in use.
-        {
-            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-            if (stream_) {
-                audio::utils::shutdown_stream(stream_, pa_);
-                stream_ = nullptr;
-            }
-        }
-
-        auto setup =
-            audio::utils::setup_audio_device<audio::InputStreamContext>(cfg, audio::utils::StreamDirection::Input, AudioCallback, pa_);
-
-        // Set new configuration and restart stream under lock
-        {
-            std::lock_guard<std::mutex> lock(stream_ctx_mu_);
-
-            stream_params_ = setup.stream_params;
-            stream_params_.user_data = setup.audio_context.get();
-            device_id_ = setup.config_params.device_id;
-            audio::utils::restart_stream(stream_, stream_params_, pa_);
-            audio_context_ = setup.audio_context;
-            restart_attempts_ = 0;
-            requested_sample_rate_ = setup.config_params.sample_rate.value_or(
-                setup.stream_params.sample_rate);  // User's requested rate, defaults to device rate
-            historical_throttle_ms_ = setup.config_params.historical_throttle_ms.value_or(DEFAULT_HISTORICAL_THROTTLE_MS);
-        }
-        VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
-    } catch (const std::exception& e) {
-        VIAM_SDK_LOG(error) << "[reconfigure] Reconfigure failed: " << e.what();
-        throw;
-    }
-}
-
 viam::sdk::ProtoStruct Microphone::do_command(const viam::sdk::ProtoStruct& command) {
     VIAM_SDK_LOG(error) << "do_command not implemented";
     return viam::sdk::ProtoStruct();
@@ -376,9 +303,6 @@ void Microphone::get_audio(std::string const& codec,
 
     // Parse codec string to enum
     const AudioCodec codec_enum = audio::codec::parse_codec(codec);
-
-    // guard to increment and decrement the active stream count
-    StreamGuard stream_guard(stream_ctx_mu_, active_streams_);
 
     // Track audio duration using timestamps
     int64_t first_chunk_start_timestamp_ns = 0;
@@ -419,7 +343,6 @@ void Microphone::get_audio(std::string const& codec,
     // Setup initial stream parameters and initialize encoder
     setup_stream_params(codec_enum,
                         mp3_ctx,
-                        false,
                         stream_sample_rate,
                         requested_sample_rate,
                         stream_num_channels,
@@ -428,41 +351,23 @@ void Microphone::get_audio(std::string const& codec,
                         device_samples_per_chunk);
 
     while (true) {
-        // Check if audio_context_ changed
-        bool context_changed = false;
         PaStream* current_stream = nullptr;
         {
             std::lock_guard<std::mutex> lock(stream_ctx_mu_);
 
-            // Detect context change (device reconfigured or stream restarted)
+            // The watchdog may have restarted a stalled stream, which swaps in a
+            // fresh audio_context_ (same format, fresh circular buffer). Skip any
+            // stale data from the old buffer and reset diagnostic counters.
             if (audio_context_ != stream_context) {
-                if (stream_context != nullptr) {
-                    VIAM_SDK_LOG(info) << "Detected stream change";
-                    context_changed = true;
-                }
-                // Switch to new context and reset read position
+                VIAM_SDK_LOG(info) << "Detected stream change";
                 stream_context = audio_context_;
                 read_position = stream_context->get_write_position();
                 restart_attempts_ = 0;
-                // Brief gap in audio, but stream continues
+                last_logged_overflow_count = 0;
+                last_logged_underflow_count = 0;
+                last_staleness_log_ns = 0;
             }
             current_stream = stream_;
-        }
-
-        // Reconfigure stream parameters if context changed
-        if (context_changed) {
-            setup_stream_params(codec_enum,
-                                mp3_ctx,
-                                true,
-                                stream_sample_rate,
-                                requested_sample_rate,
-                                stream_num_channels,
-                                stream_historical_throttle_ms,
-                                samples_per_chunk,
-                                device_samples_per_chunk);
-            last_logged_overflow_count = 0;
-            last_logged_underflow_count = 0;
-            last_staleness_log_ns = 0;
         }
 
         // Check if we have enough samples for a full chunk

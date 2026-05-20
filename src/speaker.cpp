@@ -79,12 +79,11 @@ vsdk::Model Speaker::model = {"viam", "system-audio", "speaker"};
  * Tear down the existing stream and bring up a fresh one with the saved params.
  *
  * Bails out if `playback_context` is no longer the active audio_context_ — that means
- * either reconfigure() or another stall recovery already replaced it, so the in-flight
- * play() call (if any) is about to exit on its own and we shouldn't race.
+ * another stall recovery already replaced it, so the in-flight play() call (if any)
+ * is about to exit on its own and we shouldn't race.
  *
- * On a successful restart, any unplayed audio in the old buffer is discarded — same
- * behavior as reconfigure(). The in-flight play() loop will see audio_context_ change
- * and return early.
+ * On a successful restart, any unplayed audio in the old buffer is discarded. The
+ * in-flight play() loop will see audio_context_ change and return early.
  */
 void Speaker::restart_stalled_stream(const std::shared_ptr<audio::OutputStreamContext>& playback_context) {
     std::lock_guard<std::mutex> lock(stream_mu_);
@@ -447,12 +446,12 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
             VIAM_SDK_LOG(debug) << "Playback stopped by stop command";
             return;
         }
-        // Check if context changed (reconfigure happened)
+        // Check if context changed (stream restarted by watchdog)
         PaStream* current_stream = nullptr;
         {
             std::lock_guard<std::mutex> lock(stream_mu_);
             if (audio_context_ != playback_context) {
-                VIAM_SDK_LOG(debug) << "Audio playback interrupted by reconfigure, exiting";
+                VIAM_SDK_LOG(debug) << "Audio playback interrupted by stream restart, exiting";
                 return;
             }
             current_stream = stream_;
@@ -502,55 +501,6 @@ viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& ext
 
 std::vector<viam::sdk::GeometryConfig> Speaker::get_geometries(const viam::sdk::ProtoStruct& extra) {
     throw std::runtime_error("get_geometries is unimplemented");
-}
-
-void Speaker::reconfigure(const vsdk::Dependencies& deps, const vsdk::ResourceConfig& cfg) {
-    VIAM_SDK_LOG(info) << "[reconfigure] Speaker reconfigure start";
-
-    try {
-        // Check if there's unplayed audio before reconfiguring
-        {
-            std::lock_guard<std::mutex> lock(stream_mu_);
-            if (audio_context_) {
-                const uint64_t write_pos = audio_context_->get_write_position();
-                const uint64_t playback_pos = audio_context_->playback_position.load();
-
-                if (write_pos > playback_pos) {
-                    const uint64_t unplayed_samples = write_pos - playback_pos;
-                    const double unplayed_seconds =
-                        static_cast<double>(unplayed_samples) / (audio_context_->info.sample_rate_hz * audio_context_->info.num_channels);
-                    VIAM_SDK_LOG(warn) << "[reconfigure] Discarding " << unplayed_seconds << " seconds of unplayed audio";
-                }
-            }
-        }
-
-        auto setup = audio::utils::setup_audio_device<audio::OutputStreamContext>(
-            cfg, audio::utils::StreamDirection::Output, speakerCallback, pa_, audio::BUFFER_DURATION_SECONDS);
-
-        // Set new configuration and restart stream under lock
-        {
-            std::lock_guard<std::mutex> lock(stream_mu_);
-
-            // Stop the stream first efore replacing audio_context_
-            // Otherwise the callback thread may still be accessing the old context
-            // after we destroy it (heap-use-after-free)
-            setup.stream_params.user_data = setup.audio_context.get();
-            stream_params_ = setup.stream_params;
-            audio::utils::restart_stream(stream_, stream_params_, pa_);
-            latency_ = audio::utils::get_stream_latency(stream_, stream_params_, pa_);
-            audio_context_ = setup.audio_context;
-            device_id_ = setup.config_params.device_id;
-            restart_attempts_ = 0;
-            volume_ = setup.config_params.volume;
-            if (volume_) {
-                audio::volume::set_volume(stream_params_.device_name, *volume_);
-            }
-        }
-        VIAM_SDK_LOG(info) << "[reconfigure] Reconfigure completed successfully";
-    } catch (const std::exception& e) {
-        VIAM_SDK_LOG(error) << "[reconfigure] Reconfigure failed: " << e.what();
-        throw;
-    }
 }
 
 }  // namespace speaker

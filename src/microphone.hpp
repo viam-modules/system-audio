@@ -9,7 +9,6 @@
 #include <viam/sdk/common/audio.hpp>
 #include <viam/sdk/components/audio_in.hpp>
 #include <viam/sdk/config/resource.hpp>
-#include <viam/sdk/resource/reconfigurable.hpp>
 #include "audio_codec.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
@@ -33,7 +32,7 @@ PaDeviceIndex findDeviceByName(const std::string& name, const audio::portaudio::
 // Returns the write position if previous_timestamp == 0 (default: most recent audio)
 uint64_t get_initial_read_position(const std::shared_ptr<audio::InputStreamContext>& stream_context, int64_t previous_timestamp);
 
-class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigurable {
+class Microphone final : public viam::sdk::AudioIn {
    public:
     Microphone(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa = nullptr);
 
@@ -51,7 +50,6 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
 
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
-    void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
     // Restarts the stream.
     // Must NOT be called while holding stream_ctx_mu_.
@@ -59,7 +57,6 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
 
     void setup_stream_params(audio::codec::AudioCodec codec_enum,
                              MP3EncoderContext& mp3_ctx,
-                             bool is_reconfigure,
                              int& stream_sample_rate,
                              int& requested_sample_rate,
                              int& stream_num_channels,
@@ -72,14 +69,12 @@ class Microphone final : public viam::sdk::AudioIn, public viam::sdk::Reconfigur
     int historical_throttle_ms_;  // Throttle time for historical data stream
     static vsdk::Model model;
 
-    // The mutex protects the stream, context, and the active streams counter
+    // The mutex protects the stream and context
     std::mutex stream_ctx_mu_;
     PaStream* stream_;
     std::shared_ptr<audio::InputStreamContext> audio_context_;
     // This is null in production and used for testing to inject the mock portaudio functions
     const audio::portaudio::PortAudioInterface* pa_;
-    // Count of active get_audio calls
-    int active_streams_;
     int restart_attempts_;
 
     audio::utils::StreamParams stream_params_;

@@ -10,7 +10,6 @@
 #include <viam/sdk/common/audio.hpp>
 #include <viam/sdk/components/audio_out.hpp>
 #include <viam/sdk/config/resource.hpp>
-#include <viam/sdk/resource/reconfigurable.hpp>
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "portaudio.h"
@@ -43,7 +42,7 @@ int speakerCallback(const void* inputBuffer,
                     PaStreamCallbackFlags statusFlags,
                     void* userData);
 
-class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurable {
+class Speaker final : public viam::sdk::AudioOut {
    public:
     Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa = nullptr);
 
@@ -57,7 +56,6 @@ class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurab
 
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
-    void reconfigure(const viam::sdk::Dependencies& deps, const viam::sdk::ResourceConfig& cfg);
 
     // Member variables
     double latency_;
@@ -87,8 +85,8 @@ class Speaker final : public viam::sdk::AudioOut, public viam::sdk::Reconfigurab
     // PortAudio index, so we recover from kernel re-enumeration (e.g. USB unplug/replug).
     std::string device_id_;
 
-    // Counts consecutive failed restart attempts; reset to 0 after a successful restart
-    // or a reconfigure(). Once it reaches audio::utils::MAX_RESTART_ATTEMPTS, the watchdog
+    // Counts consecutive failed restart attempts; reset to 0 after a successful restart.
+    // Once it reaches audio::utils::MAX_RESTART_ATTEMPTS, the watchdog
     // backs off to slow retries (audio::utils::BACKOFF_INTERVAL) instead of polling
     // every audio::utils::POLL_INTERVAL — supports hot-replug recovery without spamming
     // the kernel. The counter is capped at MAX so it doesn't grow unbounded.
