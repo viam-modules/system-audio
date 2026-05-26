@@ -16,6 +16,7 @@ class AudioDiscovery : public viam::sdk::Discovery {
                             audio::device_id::DeviceIdResolver* resolver = nullptr);
     std::vector<viam::sdk::ResourceConfig> discover_resources(const viam::sdk::ProtoStruct& extra) override;
     viam::sdk::ProtoStruct do_command(const viam::sdk::ProtoStruct& command) override;
+    viam::sdk::ProtoStruct get_status() override { return {}; }
     static viam::sdk::Model model;
 
    private:
