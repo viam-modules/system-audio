@@ -349,8 +349,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
     {
         const size_t pcm16_bytes_estimate = (codec == AudioCodec::PCM_16) ? raw_audio_size : raw_audio_size / 2;
         const size_t input_samples_estimate = pcm16_bytes_estimate / sizeof(int16_t);
-        const double duration_seconds =
-            static_cast<double>(input_samples_estimate) / (audio_sample_rate * audio_num_channels);
+        const double duration_seconds = static_cast<double>(input_samples_estimate) / (audio_sample_rate * audio_num_channels);
         if (duration_seconds > audio::BUFFER_DURATION_SECONDS) {
             throw std::invalid_argument("Audio file too long for playback buffer (max " + std::to_string(audio::BUFFER_DURATION_SECONDS) +
                                         " seconds); use PlayStream for longer audio");
