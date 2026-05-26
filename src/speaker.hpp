@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <viam/sdk/common/audio.hpp>
 #include <viam/sdk/components/audio_out.hpp>
 #include <viam/sdk/config/resource.hpp>
+#include "audio_codec.hpp"
 #include "audio_stream.hpp"
 #include "audio_utils.hpp"
 #include "portaudio.h"
@@ -53,6 +55,10 @@ class Speaker final : public viam::sdk::AudioOut {
     viam::sdk::ProtoStruct do_command(const viam::sdk::ProtoStruct& command);
 
     void play(std::vector<uint8_t> const& audio_data, boost::optional<viam::sdk::audio_info> info, const viam::sdk::ProtoStruct& extra);
+
+    void play_stream(viam::sdk::audio_info info,
+                     std::function<boost::optional<std::vector<uint8_t>>()> chunk_source,
+                     const viam::sdk::ProtoStruct& extra) override;
 
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
@@ -98,6 +104,26 @@ class Speaker final : public viam::sdk::AudioOut {
 
    private:
     void restart_stalled_stream(const std::shared_ptr<audio::OutputStreamContext>& playback_context);
+
+   private:
+    // Decode a buffer of PCM bytes (PCM_16, PCM_32, or PCM_32_FLOAT), apply channel conversion
+    // and resampling against the speaker's current native format, and write the result into the
+    // playback context's circular buffer. Returns the number of samples written.
+    // Caller must already hold playback_mu_. Acquires stream_mu_ for the write.
+    size_t process_and_write_pcm(const uint8_t* data,
+                                 size_t size,
+                                 audio::codec::AudioCodec codec,
+                                 int audio_sample_rate,
+                                 int audio_num_channels,
+                                 int speaker_sample_rate,
+                                 int speaker_num_channels,
+                                 std::shared_ptr<audio::OutputStreamContext> playback_context);
+
+    // Block until `samples_to_drain` samples have been played past `start_position`. Honors
+    // stop_requested_ and detects audio-context swap. Logs overflow/underflow.
+    void wait_for_playback(std::shared_ptr<audio::OutputStreamContext> playback_context,
+                           uint64_t start_position,
+                           uint64_t samples_to_drain);
 };
 
 }  // namespace speaker
