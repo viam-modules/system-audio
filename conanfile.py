@@ -42,7 +42,7 @@ class audio(ConanFile):
             self.options["*"].shared = False
 
     def requirements(self):
-        self.requires("viam-cpp-sdk/0.21.0")
+        self.requires("viam-cpp-sdk/0.37.0")
         self.requires("libmp3lame/3.100")
         self.requires("soxr/0.1.3")
 
