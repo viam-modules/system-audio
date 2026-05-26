@@ -318,8 +318,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         raw_audio_size -= audio::codec::wav_header_size;
     }
 
-    // MP3 requires whole-buffer decode (stateful decoder, sample rate / channels come from
-    // the stream header). After decoding, the rest of the pipeline treats it as PCM_16.
+    // MP3 needs a stateful whole-buffer decode; the rest of the pipeline only sees PCM_16.
     std::vector<uint8_t> mp3_decoded;
     if (codec == AudioCodec::MP3) {
         MP3DecoderContext mp3_ctx;
@@ -345,17 +344,14 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
         speaker_num_channels = stream_params_.num_channels;
     }
 
-    // Reject up-front if the audio would exceed the playback buffer. Estimate the post-resample
-    // sample count from the input bytes — exact for PCM_16, close enough to detect "too long"
-    // for PCM_32 variants (input is 2x the byte count of equivalent PCM_16).
+    // Estimate post-resample sample count from input bytes — exact for PCM_16, ~2x conservative
+    // for PCM_32 variants — to bail before allocating if the audio won't fit the playback buffer.
     {
         const size_t pcm16_bytes_estimate = (codec == AudioCodec::PCM_16) ? raw_audio_size : raw_audio_size / 2;
         const size_t input_samples_estimate = pcm16_bytes_estimate / sizeof(int16_t);
         const double duration_seconds =
             static_cast<double>(input_samples_estimate) / (audio_sample_rate * audio_num_channels);
         if (duration_seconds > audio::BUFFER_DURATION_SECONDS) {
-            VIAM_SDK_LOG(error) << "Audio duration (" << duration_seconds << " seconds) exceeds maximum playback buffer size ("
-                                << audio::BUFFER_DURATION_SECONDS << " seconds); use PlayStream for longer audio";
             throw std::invalid_argument("Audio file too long for playback buffer (max " + std::to_string(audio::BUFFER_DURATION_SECONDS) +
                                         " seconds); use PlayStream for longer audio");
         }
@@ -371,12 +367,7 @@ void Speaker::play(std::vector<uint8_t> const& audio_data,
                                                          speaker_num_channels,
                                                          playback_context);
 
-    VIAM_SDK_LOG(debug) << "Waiting for playback to complete...";
     wait_for_playback(playback_context, start_position, samples_written);
-
-    // Wait for audio pipeline to drain
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(latency_ * 1000)));
-    VIAM_SDK_LOG(debug) << "Audio playback complete";
 }
 
 size_t Speaker::process_and_write_pcm(const uint8_t* data,
@@ -387,7 +378,12 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
                                       int speaker_sample_rate,
                                       int speaker_num_channels,
                                       std::shared_ptr<audio::OutputStreamContext> playback_context) {
-    // Decode to PCM_16 (stateless codecs only — caller handles MP3 ahead of time).
+    // A 0 return is reserved to mean "the stream context was swapped out"; reject empty
+    // input up front so callers can rely on that contract.
+    if (size == 0) {
+        throw std::invalid_argument("process_and_write_pcm: empty input");
+    }
+
     std::vector<uint8_t> decoded_buf;
     const uint8_t* decoded_data = nullptr;
     size_t decoded_size = 0;
@@ -411,36 +407,35 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
     }
 
     if (decoded_size % 2 != 0) {
-        VIAM_SDK_LOG(error) << "PCM_16 size must be even, got " << decoded_size;
-        throw std::invalid_argument("invalid PCM_16 data size");
+        throw std::invalid_argument("process_and_write_pcm: PCM_16 size must be even, got " + std::to_string(decoded_size));
     }
 
     const int16_t* samples = reinterpret_cast<const int16_t*>(decoded_data);
     size_t num_samples = decoded_size / sizeof(int16_t);
 
-    // Channel conversion.
     std::vector<int16_t> channel_converted;
     if (audio_num_channels != speaker_num_channels) {
-        VIAM_SDK_LOG(debug) << "Converting audio from " << audio_num_channels << " to " << speaker_num_channels << " channels";
         convert_channels(samples, num_samples, audio_num_channels, speaker_num_channels, channel_converted);
         samples = channel_converted.data();
         num_samples = channel_converted.size();
     }
 
-    // Resample.
     std::vector<int16_t> resampled;
     if (audio_sample_rate != speaker_sample_rate) {
-        VIAM_SDK_LOG(info) << "resampling audio from " << audio_sample_rate << "Hz to speaker native sample rate "
-                           << speaker_sample_rate << " Hz";
         resample_audio(audio_sample_rate, speaker_sample_rate, speaker_num_channels, samples, num_samples, resampled);
         samples = resampled.data();
         num_samples = resampled.size();
     }
 
+    // Guarantees the post-decode pipeline preserves the "non-empty in → non-empty out" invariant,
+    // so the 0 return below can only mean a context swap.
+    if (num_samples == 0) {
+        throw std::invalid_argument("process_and_write_pcm: input too small to produce any output samples after resample");
+    }
+
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
         if (audio_context_ != playback_context) {
-            VIAM_SDK_LOG(debug) << "process_and_write_pcm: context changed, aborting write";
             return 0;
         }
         for (size_t i = 0; i < num_samples; i++) {
@@ -489,29 +484,25 @@ void Speaker::wait_for_playback(std::shared_ptr<audio::OutputStreamContext> play
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+
+    // Drain the PortAudio pipeline so the caller knows the audio actually played. Skipped on
+    // the early-return paths above (stop / context swap) — both want to exit promptly.
+    double drain_latency;
+    {
+        std::lock_guard<std::mutex> lock(stream_mu_);
+        drain_latency = latency_;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(drain_latency * 1000)));
 }
 
-/**
- * Stream audio chunks into the speaker for continuous playback.
- *
- * Chunks are pulled from `chunk_source` and written into the circular buffer as they arrive.
- * Playback runs concurrently via the PortAudio callback. The method blocks until the source
- * signals end-of-stream (returns boost::none) and the buffer has drained.
- *
- * PoC scope: supports stateless codecs (PCM_16, PCM_32, PCM_32_FLOAT). MP3 is not supported
- * here because per-chunk decoding requires stateful decoder context across chunks. Channel
- * count and sample rate conversion are applied per-chunk against the init audio_info.
- *
- * @throws std::invalid_argument if codec is unsupported for streaming.
- */
+// MP3 is not supported here because per-chunk decoding needs decoder state across chunks.
+// Resampling and channel conversion run per-chunk against the init audio_info, so chunk
+// boundaries that don't align with the resampler's window can introduce minor artifacts.
 void Speaker::play_stream(viam::sdk::audio_info info,
                           std::function<boost::optional<std::vector<uint8_t>>()> chunk_source,
                           const viam::sdk::ProtoStruct& extra) {
     std::lock_guard<std::mutex> playback_lock(playback_mu_);
     stop_requested_.store(false);
-
-    VIAM_SDK_LOG(debug) << "PlayStream called, codec=" << info.codec << " rate=" << info.sample_rate_hz
-                        << " channels=" << info.num_channels;
 
     const AudioCodec codec = audio::codec::parse_codec(info.codec);
     if (codec == AudioCodec::MP3) {
@@ -524,8 +515,7 @@ void Speaker::play_stream(viam::sdk::audio_info info,
     {
         std::lock_guard<std::mutex> lock(stream_mu_);
         if (!audio_context_) {
-            VIAM_SDK_LOG(error) << "[PlayStream] Audio context is nullptr";
-            throw std::runtime_error("Audio context is nullptr");
+            throw std::runtime_error("[PlayStream] Audio context is nullptr");
         }
         playback_context = audio_context_;
         speaker_sample_rate = stream_params_.sample_rate;
@@ -537,10 +527,11 @@ void Speaker::play_stream(viam::sdk::audio_info info,
 
     while (auto chunk = chunk_source()) {
         if (stop_requested_.load()) {
-            VIAM_SDK_LOG(debug) << "[PlayStream] Stop requested, ending stream";
             break;
         }
-        // Per-chunk resampling is stateless across chunks; minor boundary artifacts possible.
+        if (chunk->empty()) {
+            continue;
+        }
         const size_t written = process_and_write_pcm(chunk->data(),
                                                      chunk->size(),
                                                      codec,
@@ -550,17 +541,13 @@ void Speaker::play_stream(viam::sdk::audio_info info,
                                                      speaker_num_channels,
                                                      playback_context);
         if (written == 0) {
+            // Stream context was swapped; bail without draining.
             return;
         }
         total_samples_written += written;
     }
 
-    VIAM_SDK_LOG(debug) << "[PlayStream] Source exhausted, " << total_samples_written
-                        << " samples written, waiting for drain";
     wait_for_playback(playback_context, start_position, total_samples_written);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(latency_ * 1000)));
-    VIAM_SDK_LOG(debug) << "[PlayStream] Stream playback complete";
 }
 
 viam::sdk::audio_properties Speaker::get_properties(const vsdk::ProtoStruct& extra) {
