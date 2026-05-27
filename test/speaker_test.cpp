@@ -1005,6 +1005,394 @@ TEST_F(SpeakerTest, PlayPCM16WithWavHeader) {
   }
 
 
+// play_stream tests
+
+TEST_F(SpeakerTest, PlayStream_RejectsMP3) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::MP3, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    auto chunk_source = []() -> boost::optional<std::vector<uint8_t>> {
+        return boost::none;
+    };
+
+    EXPECT_THROW(speaker.play_stream(info, chunk_source, extra), std::invalid_argument);
+}
+
+TEST_F(SpeakerTest, PlayStream_EmptySourceCompletes) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    auto chunk_source = []() -> boost::optional<std::vector<uint8_t>> {
+        return boost::none;
+    };
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), 0u);
+}
+
+TEST_F(SpeakerTest, PlayStream_PCM16_MultipleChunks) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int samples_per_chunk = 100;
+    const int num_chunks = 3;
+    const int total_samples = samples_per_chunk * num_chunks;
+
+    std::vector<int16_t> expected(total_samples);
+    for (int i = 0; i < total_samples; i++) {
+        expected[i] = static_cast<int16_t>(i + 1);
+    }
+
+    int chunk_index = 0;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (chunk_index >= num_chunks) {
+            return boost::none;
+        }
+        std::vector<uint8_t> chunk(samples_per_chunk * sizeof(int16_t));
+        std::memcpy(chunk.data(),
+                    expected.data() + chunk_index * samples_per_chunk,
+                    chunk.size());
+        chunk_index++;
+        return chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Pre-advance playback position so wait_for_playback exits immediately once all chunks land.
+    speaker.audio_context_->playback_position.store(total_samples);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(chunk_index, num_chunks);
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), static_cast<uint64_t>(total_samples));
+
+    std::vector<int16_t> read_buffer(total_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), total_samples, read_pos);
+    EXPECT_EQ(samples_read, total_samples);
+    for (int i = 0; i < total_samples; i++) {
+        EXPECT_EQ(read_buffer[i], expected[i]);
+    }
+}
+
+TEST_F(SpeakerTest, PlayStream_PCM32_DecodesChunk) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int num_samples = 100;
+    std::vector<int16_t> expected(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        expected[i] = static_cast<int16_t>(i * 100);
+    }
+
+    std::vector<uint8_t> pcm32_chunk;
+    audio::codec::convert_pcm16_to_pcm32(expected.data(), num_samples, pcm32_chunk);
+
+    bool delivered = false;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (delivered) {
+            return boost::none;
+        }
+        delivered = true;
+        return pcm32_chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_EQ(read_buffer[i], expected[i]);
+    }
+}
+
+TEST_F(SpeakerTest, PlayStream_PCM32Float_DecodesChunk) {
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int num_samples = 100;
+    std::vector<int16_t> expected(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        expected[i] = static_cast<int16_t>(i * 100);
+    }
+
+    std::vector<uint8_t> float_chunk;
+    audio::codec::convert_pcm16_to_float32(expected.data(), num_samples, float_chunk);
+
+    bool delivered = false;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (delivered) {
+            return boost::none;
+        }
+        delivered = true;
+        return float_chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_32_FLOAT, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    speaker.audio_context_->playback_position.store(num_samples);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+
+    std::vector<int16_t> read_buffer(num_samples);
+    uint64_t read_pos = 0;
+    int samples_read = speaker.audio_context_->read_samples(read_buffer.data(), num_samples, read_pos);
+    EXPECT_EQ(samples_read, num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        EXPECT_NEAR(read_buffer[i], expected[i], 1);
+    }
+}
+
+TEST_F(SpeakerTest, PlayStream_ChannelConversion) {
+    // Speaker is mono, chunks come in as stereo PCM16 — process_and_write_pcm should downmix.
+    const int sample_rate = 48000;
+    const int speaker_channels = 1;
+    const int audio_channels = 2;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(speaker_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int stereo_samples = 100;
+    std::vector<int16_t> stereo(stereo_samples);
+    for (int i = 0; i < stereo_samples; i++) {
+        stereo[i] = static_cast<int16_t>(i % 1000);
+    }
+    std::vector<uint8_t> chunk(stereo_samples * sizeof(int16_t));
+    std::memcpy(chunk.data(), stereo.data(), chunk.size());
+
+    bool delivered = false;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (delivered) {
+            return boost::none;
+        }
+        delivered = true;
+        return chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, audio_channels};
+    ProtoStruct extra{};
+
+    const int expected_mono_samples = stereo_samples / 2;
+    speaker.audio_context_->playback_position.store(expected_mono_samples);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), static_cast<uint64_t>(expected_mono_samples));
+}
+
+TEST_F(SpeakerTest, PlayStream_Resamples) {
+    const int speaker_rate = 48000;
+    const int audio_rate = 44100;
+    const int num_channels = 2;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(speaker_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int duration_ms = 50;
+    const int num_samples = (audio_rate * duration_ms / 1000) * num_channels;
+    std::vector<int16_t> samples(num_samples);
+    for (int i = 0; i < num_samples; i++) {
+        samples[i] = static_cast<int16_t>(i % 1000);
+    }
+    std::vector<uint8_t> chunk(num_samples * sizeof(int16_t));
+    std::memcpy(chunk.data(), samples.data(), chunk.size());
+
+    bool delivered = false;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (delivered) {
+            return boost::none;
+        }
+        delivered = true;
+        return chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, audio_rate, num_channels};
+    ProtoStruct extra{};
+
+    const int expected_resampled = (num_samples * speaker_rate) / audio_rate;
+    speaker.audio_context_->playback_position.store(expected_resampled);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), static_cast<uint64_t>(expected_resampled));
+}
+
+TEST_F(SpeakerTest, PlayStream_StopRequestedBreaksLoop) {
+    // Verify a mid-stream stop_requested causes the loop to exit after the current chunk
+    // without consuming the remaining chunks.
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const int samples_per_chunk = 100;
+    std::vector<int16_t> chunk_samples(samples_per_chunk);
+    for (int i = 0; i < samples_per_chunk; i++) {
+        chunk_samples[i] = static_cast<int16_t>(i);
+    }
+    std::vector<uint8_t> chunk(samples_per_chunk * sizeof(int16_t));
+    std::memcpy(chunk.data(), chunk_samples.data(), chunk.size());
+
+    int chunks_pulled = 0;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        chunks_pulled++;
+        if (chunks_pulled == 1) {
+            return chunk;
+        }
+        // After delivering the first chunk, request a stop. The loop should break
+        // on the next iteration before processing this second chunk.
+        speaker.stop_requested_.store(true);
+        return chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    // Only the first chunk should be written before stop interrupts.
+    speaker.audio_context_->playback_position.store(samples_per_chunk);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(chunks_pulled, 2);
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), static_cast<uint64_t>(samples_per_chunk));
+}
+
+TEST_F(SpeakerTest, PlayStream_ResetsStopRequestedOnEntry) {
+    // play_stream() must clear a previously-set stop_requested_ so a prior stop command
+    // doesn't poison the next stream.
+    const int sample_rate = 48000;
+    const int num_channels = 1;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+    speaker.stop_requested_.store(true);
+
+    const int samples_per_chunk = 50;
+    std::vector<int16_t> chunk_samples(samples_per_chunk);
+    for (int i = 0; i < samples_per_chunk; i++) {
+        chunk_samples[i] = static_cast<int16_t>(i + 1);
+    }
+    std::vector<uint8_t> chunk(samples_per_chunk * sizeof(int16_t));
+    std::memcpy(chunk.data(), chunk_samples.data(), chunk.size());
+
+    bool delivered = false;
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        if (delivered) {
+            return boost::none;
+        }
+        delivered = true;
+        return chunk;
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    speaker.audio_context_->playback_position.store(samples_per_chunk);
+
+    EXPECT_NO_THROW(speaker.play_stream(info, chunk_source, extra));
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), static_cast<uint64_t>(samples_per_chunk));
+}
+
+
 // Watchdog: when the speaker callback stops firing, the background watcher should
 // detect the staleness on its next poll and replace audio_context_ with a fresh one.
 // We force the stale state by manually setting last_callback_time_ns to a timestamp
