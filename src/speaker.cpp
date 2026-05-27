@@ -500,10 +500,6 @@ void Speaker::wait_for_playback(std::shared_ptr<audio::OutputStreamContext> play
 
 // Resampling and channel conversion run per-chunk against the source's audio_info, so chunk
 // boundaries that don't align with the resampler's window can introduce minor artifacts.
-//
-// MP3 streaming carries a decoder context across chunks (LAME buffers partial frames
-// internally) and derives sample_rate/num_channels from the bitstream header rather than the
-// init audio_info — the init values for MP3 are ignored.
 void Speaker::play_stream(viam::sdk::audio_info info,
                           std::function<boost::optional<std::vector<uint8_t>>()> chunk_source,
                           const viam::sdk::ProtoStruct& extra) {
@@ -511,6 +507,9 @@ void Speaker::play_stream(viam::sdk::audio_info info,
     stop_requested_.store(false);
 
     const AudioCodec source_codec = audio::codec::parse_codec(info.codec);
+    if (source_codec == AudioCodec::MP3) {
+        throw std::invalid_argument("[PlayStream] MP3 streaming is not supported; use play() for MP3");
+    }
 
     int speaker_sample_rate;
     int speaker_num_channels;
@@ -525,12 +524,6 @@ void Speaker::play_stream(viam::sdk::audio_info info,
         speaker_num_channels = stream_params_.num_channels;
     }
 
-    // MP3 path: decode each chunk through a persistent LAME context. Once the first frame's
-    // header lands, treat the resulting PCM as PCM_16 for the rest of the pipeline.
-    MP3DecoderContext mp3_ctx;
-    const bool is_mp3 = (source_codec == AudioCodec::MP3);
-    const AudioCodec downstream_codec = is_mp3 ? AudioCodec::PCM_16 : source_codec;
-
     const uint64_t start_position = playback_context->get_write_position();
     uint64_t total_samples_written = 0;
 
@@ -542,29 +535,11 @@ void Speaker::play_stream(viam::sdk::audio_info info,
             continue;
         }
 
-        const uint8_t* pcm_data = chunk->data();
-        size_t pcm_size = chunk->size();
-        std::vector<uint8_t> mp3_decoded;
-        int chunk_sample_rate = info.sample_rate_hz;
-        int chunk_num_channels = info.num_channels;
-
-        if (is_mp3) {
-            decode_mp3_chunk(mp3_ctx, chunk->data(), chunk->size(), mp3_decoded);
-            if (mp3_decoded.empty()) {
-                // LAME hasn't produced a frame yet (still buffering, or ID3 spans chunks). Skip.
-                continue;
-            }
-            pcm_data = mp3_decoded.data();
-            pcm_size = mp3_decoded.size();
-            chunk_sample_rate = mp3_ctx.sample_rate;
-            chunk_num_channels = mp3_ctx.num_channels;
-        }
-
-        const size_t written = process_and_write_pcm(pcm_data,
-                                                     pcm_size,
-                                                     downstream_codec,
-                                                     chunk_sample_rate,
-                                                     chunk_num_channels,
+        const size_t written = process_and_write_pcm(chunk->data(),
+                                                     chunk->size(),
+                                                     source_codec,
+                                                     info.sample_rate_hz,
+                                                     info.num_channels,
                                                      speaker_sample_rate,
                                                      speaker_num_channels,
                                                      playback_context);
@@ -573,26 +548,6 @@ void Speaker::play_stream(viam::sdk::audio_info info,
             return;
         }
         total_samples_written += written;
-    }
-
-    // Drain any frames LAME still has buffered, then push them through the pipeline.
-    if (is_mp3 && !stop_requested_.load()) {
-        std::vector<uint8_t> tail;
-        flush_mp3_decoder(mp3_ctx, tail);
-        if (!tail.empty()) {
-            const size_t written = process_and_write_pcm(tail.data(),
-                                                         tail.size(),
-                                                         AudioCodec::PCM_16,
-                                                         mp3_ctx.sample_rate,
-                                                         mp3_ctx.num_channels,
-                                                         speaker_sample_rate,
-                                                         speaker_num_channels,
-                                                         playback_context);
-            if (written == 0) {
-                return;
-            }
-            total_samples_written += written;
-        }
     }
 
     wait_for_playback(playback_context, start_position, total_samples_written);
