@@ -444,8 +444,7 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
 
     // Backpressure: cap how far the producer can run ahead of the callback so a faster-than-
     // real-time source can't lap the read pointer and erase audio.
-    const uint64_t margin_samples =
-        static_cast<uint64_t>(speaker_sample_rate) * speaker_num_channels * BUFFER_MARGIN_MS / 1000;
+    const uint64_t margin_samples = static_cast<uint64_t>(speaker_sample_rate) * speaker_num_channels * BUFFER_MARGIN_MS / 1000;
     const uint64_t max_ahead = static_cast<uint64_t>(playback_context->buffer_capacity) - margin_samples;
 
     for (size_t i = 0; i < num_samples; ++i) {
