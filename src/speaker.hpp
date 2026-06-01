@@ -109,8 +109,10 @@ class Speaker final : public viam::sdk::AudioOut {
     void restart_stalled_stream(const std::shared_ptr<audio::OutputStreamContext>& playback_context);
 
     // Decode (PCM_16/32/32_FLOAT), channel-convert, resample, and write into the playback
-    // context's buffer. Returns samples written, or 0 if the stream context was swapped
-    // mid-call (the only path that produces a 0 return). Caller must hold playback_mu_.
+    // context's buffer. Writes are paced so the producer can't run more than buffer_capacity
+    // samples ahead of the callback; this propagates backpressure up through chunk_source.
+    // Returns num_samples on success, a partial count if stop_requested_ was set mid-write,
+    // or 0 if the stream context was swapped mid-call. Caller must hold playback_mu_.
     size_t process_and_write_pcm(const uint8_t* data,
                                  size_t size,
                                  audio::codec::AudioCodec codec,

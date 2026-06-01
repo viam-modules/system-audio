@@ -19,6 +19,12 @@ using audio::codec::AudioCodec;
 constexpr int MIN_VOLUME = 0;
 constexpr int MAX_VOLUME = 100;
 
+// Distance from the buffer's lap point at which process_and_write_pcm blocks waiting for
+// the callback to drain. This is what paces a faster-than-real-time producer (TTS, file
+// playback) — and the size of the margin is the cushion against any delay in the callback
+// advancing playback_position (scheduler jitter, USB stalls, etc.).
+constexpr int BUFFER_MARGIN_MS = 50;
+
 Speaker::Speaker(viam::sdk::Dependencies deps, viam::sdk::ResourceConfig cfg, audio::portaudio::PortAudioInterface* pa)
     : viam::sdk::AudioOut(cfg.name()), pa_(pa), stream_(nullptr) {
     auto setup = audio::utils::setup_audio_device<audio::OutputStreamContext>(
@@ -436,14 +442,26 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
         throw std::invalid_argument("process_and_write_pcm: input too small to produce any output samples after resample");
     }
 
-    {
-        std::lock_guard<std::mutex> lock(stream_mu_);
-        if (audio_context_ != playback_context) {
-            return 0;
+    // Backpressure: cap how far the producer can run ahead of the callback so a faster-than-
+    // real-time source can't lap the read pointer and erase audio.
+    const uint64_t margin_samples =
+        static_cast<uint64_t>(speaker_sample_rate) * speaker_num_channels * BUFFER_MARGIN_MS / 1000;
+    const uint64_t max_ahead = static_cast<uint64_t>(playback_context->buffer_capacity) - margin_samples;
+
+    for (size_t i = 0; i < num_samples; ++i) {
+        while (playback_context->get_write_position() - playback_context->playback_position.load() >= max_ahead) {
+            if (stop_requested_.load()) {
+                return i;
+            }
+            {
+                std::lock_guard<std::mutex> lock(stream_mu_);
+                if (audio_context_ != playback_context) {
+                    return 0;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        for (size_t i = 0; i < num_samples; i++) {
-            audio_context_->write_sample(samples[i]);
-        }
+        playback_context->write_sample(samples[i]);
     }
     return num_samples;
 }
