@@ -443,7 +443,10 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
     const uint64_t max_ahead = static_cast<uint64_t>(playback_context->buffer_capacity) - margin_samples;
 
     for (size_t i = 0; i < num_samples; ++i) {
-        while (playback_context->get_write_position() - playback_context->playback_position.load() >= max_ahead) {
+        // Use `write >= read + max_ahead` rather than `write - read >= max_ahead` so a read
+        // position ahead of write (only reachable in tests that pre-advance playback_position)
+        // doesn't underflow into a huge unsigned diff and trap us forever.
+        while (playback_context->get_write_position() >= playback_context->playback_position.load() + max_ahead) {
             if (stop_requested_.load()) {
                 return i;
             }
