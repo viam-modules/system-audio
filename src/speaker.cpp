@@ -387,8 +387,6 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
                                       int speaker_sample_rate,
                                       int speaker_num_channels,
                                       std::shared_ptr<audio::OutputStreamContext> playback_context) {
-    // A 0 return is reserved to mean "the stream context was swapped out"; reject empty
-    // input up front so callers can rely on that contract.
     if (size == 0) {
         throw std::invalid_argument("process_and_write_pcm: empty input");
     }
@@ -435,9 +433,6 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
         samples = resampled.data();
         num_samples = resampled.size();
     }
-
-    // Guarantees the post-decode pipeline preserves the "non-empty in → non-empty out" invariant,
-    // so the 0 return below can only mean a context swap.
     if (num_samples == 0) {
         throw std::invalid_argument("process_and_write_pcm: input too small to produce any output samples after resample");
     }
@@ -455,7 +450,7 @@ size_t Speaker::process_and_write_pcm(const uint8_t* data,
             {
                 std::lock_guard<std::mutex> lock(stream_mu_);
                 if (audio_context_ != playback_context) {
-                    return 0;
+                    return i;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -548,23 +543,24 @@ void Speaker::play_stream(viam::sdk::audio_info info,
         if (stop_requested_.load()) {
             break;
         }
+        {
+            std::lock_guard<std::mutex> lock(stream_mu_);
+            if (audio_context_ != playback_context) {
+                return;
+            }
+        }
         if (chunk->empty()) {
             continue;
         }
 
-        const size_t written = process_and_write_pcm(chunk->data(),
-                                                     chunk->size(),
-                                                     source_codec,
-                                                     info.sample_rate_hz,
-                                                     info.num_channels,
-                                                     speaker_sample_rate,
-                                                     speaker_num_channels,
-                                                     playback_context);
-        if (written == 0) {
-            // Stream context was swapped; bail without draining.
-            return;
-        }
-        total_samples_written += written;
+        total_samples_written += process_and_write_pcm(chunk->data(),
+                                                       chunk->size(),
+                                                       source_codec,
+                                                       info.sample_rate_hz,
+                                                       info.num_channels,
+                                                       speaker_sample_rate,
+                                                       speaker_num_channels,
+                                                       playback_context);
     }
 
     wait_for_playback(playback_context, start_position, total_samples_written);

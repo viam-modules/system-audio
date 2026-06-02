@@ -1114,6 +1114,99 @@ TEST_F(SpeakerTest, PlayStream_PCM16_MultipleChunks) {
     }
 }
 
+TEST_F(SpeakerTest, PlayStream_BackpressureBlocksProducerWhenBufferFull) {
+    // Small sample_rate keeps buffer_capacity tractable and the test fast.
+    // buffer_capacity = sample_rate * num_channels * BUFFER_DURATION_SECONDS = 30000.
+    // BUFFER_MARGIN_MS = 50 → margin_samples = 50, max_ahead = 29950.
+    const int sample_rate = 1000;
+    const int num_channels = 1;
+    const int buffer_margin_ms = 50;
+
+    auto attributes = ProtoStruct{};
+    attributes["sample_rate"] = static_cast<double>(sample_rate);
+    attributes["num_channels"] = static_cast<double>(num_channels);
+
+    ResourceConfig config(
+        "rdk:component:audioout", "", test_name_, attributes, "",
+        speaker::Speaker::model, LinkConfig{}, log_level::info);
+
+    Dependencies deps{};
+    speaker::Speaker speaker(deps, config, mock_pa_.get());
+
+    const uint64_t buffer_capacity = static_cast<uint64_t>(speaker.audio_context_->buffer_capacity);
+    const uint64_t margin_samples =
+        static_cast<uint64_t>(sample_rate) * num_channels * buffer_margin_ms / 1000;
+    const uint64_t max_ahead = buffer_capacity - margin_samples;
+
+    // Total samples exceed buffer_capacity, forcing the producer to block at least once
+    // while waiting for the consumer to advance playback_position.
+    const size_t samples_per_chunk = 5000;
+    const size_t num_chunks = 10;
+    const uint64_t total_samples = static_cast<uint64_t>(samples_per_chunk * num_chunks);
+    ASSERT_GT(total_samples, buffer_capacity);
+
+    std::atomic<size_t> chunks_consumed{0};
+    auto chunk_source = [&]() -> boost::optional<std::vector<uint8_t>> {
+        const size_t idx = chunks_consumed.load();
+        if (idx >= num_chunks) {
+            return boost::none;
+        }
+        chunks_consumed.fetch_add(1);
+        return std::vector<uint8_t>(samples_per_chunk * sizeof(int16_t), 0);
+    };
+
+    viam::sdk::audio_info info{viam::sdk::audio_codecs::PCM_16, sample_rate, num_channels};
+    ProtoStruct extra{};
+
+    std::thread producer([&]() {
+        speaker.play_stream(info, chunk_source, extra);
+    });
+
+    auto wait_until = [](const std::function<bool()>& predicate, std::chrono::milliseconds timeout) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (predicate()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return predicate();
+    };
+
+    // Phase 1: producer fills the buffer up to max_ahead while playback_position is 0.
+    const bool reached_cap = wait_until(
+        [&]() { return speaker.audio_context_->get_write_position() >= max_ahead; },
+        std::chrono::seconds(1));
+    ASSERT_TRUE(reached_cap) << "producer never reached max_ahead";
+
+    // Core invariant: write must never exceed read + max_ahead.
+    EXPECT_LE(speaker.audio_context_->get_write_position(), max_ahead);
+
+    // With buffer full, producer must not have consumed all chunks.
+    EXPECT_LT(chunks_consumed.load(), num_chunks);
+
+    // Confirm producer is genuinely blocked — write_pos stays put across a sleep.
+    const uint64_t write_pos_snapshot = speaker.audio_context_->get_write_position();
+    const size_t chunks_consumed_snapshot = chunks_consumed.load();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), write_pos_snapshot)
+        << "producer kept writing while buffer was full";
+    EXPECT_EQ(chunks_consumed.load(), chunks_consumed_snapshot)
+        << "producer pulled new chunks while blocked";
+
+    // Phase 2: advance playback_position; producer must resume.
+    speaker.audio_context_->playback_position.store(max_ahead);
+    const bool resumed = wait_until(
+        [&]() { return chunks_consumed.load() > chunks_consumed_snapshot; },
+        std::chrono::seconds(1));
+    EXPECT_TRUE(resumed) << "producer did not resume after playback_position advanced";
+
+    // Drain everything so wait_for_playback exits and play_stream returns cleanly.
+    speaker.audio_context_->playback_position.store(total_samples);
+    producer.join();
+
+    EXPECT_EQ(chunks_consumed.load(), num_chunks);
+    EXPECT_EQ(speaker.audio_context_->get_write_position(), total_samples);
+}
+
 TEST_F(SpeakerTest, PlayStream_PCM32_DecodesChunk) {
     const int sample_rate = 48000;
     const int num_channels = 1;

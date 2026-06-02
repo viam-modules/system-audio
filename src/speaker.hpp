@@ -111,8 +111,9 @@ class Speaker final : public viam::sdk::AudioOut {
     // Decode (PCM_16/32/32_FLOAT), channel-convert, resample, and write into the playback
     // context's buffer. Writes are paced so the producer can't run more than buffer_capacity
     // samples ahead of the callback; this propagates backpressure up through chunk_source.
-    // Returns num_samples on success, a partial count if stop_requested_ was set mid-write,
-    // or 0 if the stream context was swapped mid-call. Caller must hold playback_mu_.
+    // Returns the number of samples actually written — equal to the decoded input size on a
+    // full write, or a partial count if stop_requested_ fired or the stream context was
+    // swapped mid-write. Caller must hold playback_mu_.
     size_t process_and_write_pcm(const uint8_t* data,
                                  size_t size,
                                  audio::codec::AudioCodec codec,
