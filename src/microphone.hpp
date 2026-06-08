@@ -50,6 +50,9 @@ class Microphone final : public viam::sdk::AudioIn {
 
     viam::sdk::audio_properties get_properties(const viam::sdk::ProtoStruct& extra);
     std::vector<viam::sdk::GeometryConfig> get_geometries(const viam::sdk::ProtoStruct& extra);
+    viam::sdk::ProtoStruct get_status() override {
+        return {};
+    }
 
     // Restarts the stream.
     // Must NOT be called while holding stream_ctx_mu_.
