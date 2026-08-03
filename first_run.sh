@@ -121,74 +121,33 @@ missing_sonames() {
 # Where a distro has renamed a package, the candidates are listed newest-first
 # and the first one the package manager actually knows about is used. That is
 # what lets this work across Debian/Ubuntu's 64-bit time_t rename
-# (libasound2t64 vs libasound2, libglib2.0-0t64 vs libglib2.0-0) without
-# pinning a distro release.
+# (libasound2t64 vs libasound2) without pinning a distro release.
 # --------------------------------------------------------------------------- #
 packages_for_soname() {
     local mgr=$1 soname=$2
     case "$mgr" in
     apt)
         case "$soname" in
-        libGL.so.1) echo "libgl1 libgl1-mesa-glx" ;;
-        libICE.so.6) echo "libice6" ;;
-        libSM.so.6) echo "libsm6" ;;
-        libX11.so.6) echo "libx11-6" ;;
-        libXext.so.6) echo "libxext6" ;;
-        libglib-2.0.so.0 | libgthread-2.0.so.0) echo "libglib2.0-0t64 libglib2.0-0" ;;
-        libxcb.so.1) echo "libxcb1" ;;
-        libz.so.1) echo "zlib1g" ;;
         libasound.so.2) echo "libasound2t64 libasound2" ;;
         esac
         ;;
     dnf | yum)
         case "$soname" in
-        libGL.so.1) echo "mesa-libGL" ;;
-        libICE.so.6) echo "libICE" ;;
-        libSM.so.6) echo "libSM" ;;
-        libX11.so.6) echo "libX11" ;;
-        libXext.so.6) echo "libXext" ;;
-        libglib-2.0.so.0 | libgthread-2.0.so.0) echo "glib2" ;;
-        libxcb.so.1) echo "libxcb" ;;
-        libz.so.1) echo "zlib-ng-compat zlib" ;;
         libasound.so.2) echo "alsa-lib" ;;
         esac
         ;;
     zypper)
         case "$soname" in
-        libGL.so.1) echo "Mesa-libGL1" ;;
-        libICE.so.6) echo "libICE6" ;;
-        libSM.so.6) echo "libSM6" ;;
-        libX11.so.6) echo "libX11-6" ;;
-        libXext.so.6) echo "libXext6" ;;
-        libglib-2.0.so.0 | libgthread-2.0.so.0) echo "glib2" ;;
-        libxcb.so.1) echo "libxcb1" ;;
-        libz.so.1) echo "libz1" ;;
         libasound.so.2) echo "libasound2" ;;
         esac
         ;;
     pacman)
         case "$soname" in
-        libGL.so.1) echo "libglvnd" ;;
-        libICE.so.6) echo "libice" ;;
-        libSM.so.6) echo "libsm" ;;
-        libX11.so.6) echo "libx11" ;;
-        libXext.so.6) echo "libxext" ;;
-        libglib-2.0.so.0 | libgthread-2.0.so.0) echo "glib2" ;;
-        libxcb.so.1) echo "libxcb" ;;
-        libz.so.1) echo "zlib" ;;
         libasound.so.2) echo "alsa-lib" ;;
         esac
         ;;
     apk)
         case "$soname" in
-        libGL.so.1) echo "mesa-gl" ;;
-        libICE.so.6) echo "libice" ;;
-        libSM.so.6) echo "libsm" ;;
-        libX11.so.6) echo "libx11" ;;
-        libXext.so.6) echo "libxext" ;;
-        libglib-2.0.so.0 | libgthread-2.0.so.0) echo "glib" ;;
-        libxcb.so.1) echo "libxcb" ;;
-        libz.so.1) echo "zlib" ;;
         libasound.so.2) echo "alsa-lib" ;;
         esac
         ;;
@@ -353,8 +312,7 @@ resolve_packages() {
             UNRESOLVED+=("$soname")
             continue
         fi
-        # De-duplicate: one package can provide several sonames, e.g.
-        # libglib2.0-0t64 ships both libglib-2.0.so.0 and libgthread-2.0.so.0.
+        # De-duplicate: in general one package can provide several sonames.
         case " ${PACKAGES[*]-} " in
         *" $chosen "*) ;;
         *) PACKAGES+=("$chosen") ;;
