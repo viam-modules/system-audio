@@ -7,6 +7,28 @@ This [Viam module](https://docs.viam.com/registry/) provides audio input and out
 - **Linux x64**
 - **Linux ARM64**
 
+## System dependencies
+
+This module needs a few shared libraries that are not bundled inside it:
+
+| Library | Debian / Ubuntu | Fedora / RHEL |
+| --- | --- | --- |
+| `libasound.so.2` | `libasound2t64` (`libasound2` before Ubuntu 24.04) | `alsa-lib` |
+
+The `audio-module` binary links ALSA directly. The module tarball bundles JACK and libdb, but ALSA has to come from the host.
+
+`first_run.sh` installs them automatically the first time the module is
+installed on a machine, so in most cases there is nothing to do. It supports
+`apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk`, picks the right package name
+for the distro, and does nothing on macOS.
+
+If it cannot install them — for example the module is not running as root and
+passwordless `sudo` is unavailable — it logs the exact command to run by hand
+and exits without failing, so it never blocks the rest of the machine from
+reconfiguring. Look for `[first_run]` lines in the machine logs. Until the
+libraries are present the module fails to start with
+`cannot open shared object file`.
+
 ## Model viam:audio:microphone
 
 ### Configuration
