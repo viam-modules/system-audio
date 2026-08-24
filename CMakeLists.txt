@@ -102,6 +102,9 @@ endif()
 install(TARGETS audio-module DESTINATION .)
 install(FILES meta.json DESTINATION .)
 install(PROGRAMS run.sh DESTINATION .)
+# PROGRAMS rather than FILES: the RDK execs first_run.sh directly, so it has to
+# keep its executable bit.
+install(PROGRAMS first_run.sh DESTINATION .)
 
 # Bundle JACK and its dependencies into binary
 if(LINUX)

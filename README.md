@@ -7,6 +7,35 @@ This [Viam module](https://docs.viam.com/registry/) provides audio input and out
 - **Linux x64**
 - **Linux ARM64**
 
+## System dependencies
+
+This module needs a few shared libraries that are not bundled inside it:
+
+| Library | Debian / Ubuntu | Fedora / RHEL |
+| --- | --- | --- |
+| `libasound.so.2` | `libasound2t64` (`libasound2` before Ubuntu 24.04) | `alsa-lib` |
+
+The `audio-module` binary links ALSA directly. The module tarball bundles JACK and libdb, but ALSA has to come from the host.
+
+`first_run.sh` installs them automatically the first time the module is
+installed on a machine, so in most cases there is nothing to do. It supports
+`apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk`, picks the right package name
+for the distro, and does nothing on macOS.
+
+If it cannot install them — for example the module is not running as root and
+passwordless `sudo` is unavailable — it **fails loudly**: it logs the exact
+command to run by hand and exits non-zero. That aborts the machine's
+reconfiguration, so the machine keeps running its previous, working config
+instead of coming up with a module that cannot start. Already-running modules
+are left alone. Look for `[first_run]` lines in the machine logs.
+
+Once the libraries are installed the machine picks them up on its next
+reconfiguration — no success marker is written on failure, so `first_run` is
+retried automatically. Because an aborted reconfiguration is retried every few
+seconds, the install attempt itself is rate-limited to once every 10 minutes to
+avoid fighting the package-manager lock; the diagnostic and the non-zero exit
+still happen on every attempt.
+
 ## Model viam:audio:microphone
 
 ### Configuration

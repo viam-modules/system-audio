@@ -30,5 +30,6 @@
        "path" : "module.tar.gz",
        "arch" : ["linux/amd64", "linux/arm64", "darwin/arm64"]
     },
-  "entrypoint": "run.sh"
+  "entrypoint": "run.sh",
+  "first_run": "first_run.sh"
 }
