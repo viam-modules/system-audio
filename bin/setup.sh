@@ -23,7 +23,6 @@ elif  [[ ${OS} == "linux" ]]; then
         libasound-dev \
         portaudio19-dev \
         python3-venv \
-        cmake \
         libjack-dev \
         libdb5.3-dev
 fi
@@ -36,10 +35,11 @@ else
   source ./venv/bin/activate
 fi
 
-# Set up conan
+# Set up conan and a CMake new enough for viam-cpp-sdk (>= 3.25); apt's is older on
+# focal and bullseye, and the pip wheel stays inside the venv.
 if [ ! -f "./venv/bin/conan" ]; then
   echo 'installing conan'
-  python3 -m pip install conan
+  python3 -m pip install conan cmake
 fi
 
 conan profile detect || echo "Conan is already installed"
